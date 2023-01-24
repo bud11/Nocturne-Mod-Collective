@@ -229,7 +229,6 @@ namespace Nocturne_Minimap
                         int whatever = fldAutoMap.AutoMapSeq;
 
                         //force map update
-                        //this might fail sometimes just due to objects not being ready or something, so I'm trycatching it
 
                         ignoreinput = true;
                         audiostop = true;
@@ -255,10 +254,6 @@ namespace Nocturne_Minimap
 
                     viewclone.transform.localRotation = viewog.transform.localRotation;
                     selfclone.transform.localRotation = selfog.transform.localRotation;
-
-
-                    //foreach (Il2CppSystem.Collections.Generic.KeyValuePair<string, fldAutoMap.childIcon> x in fldAutoMap._autoMapIconFld)
-
 
 
                     //keep icons in correct positions
@@ -322,7 +317,7 @@ namespace Nocturne_Minimap
 
 
         //dont run auto map clear, just hide objects
-        //might require custom garbage collection later
+        //might require custom garbage collection later, not sure
         [HarmonyPatch(typeof(fldAutoMap), "fldAutoMapFree")]
         public static class freepatch
         {
@@ -340,12 +335,11 @@ namespace Nocturne_Minimap
 
         public static bool audiostop = false;
 
+
+
         //force map objects to load/be created when any area loads
         //this needs to be logic that gets called ONE TIME when a new area is loaded.
 
-
-        //[HarmonyPatch(typeof(dds3WorldBasic), "dds3SetActiveScene")]
-        //[HarmonyPatch(typeof(dds3UnityEx_Fld), "fldPPSV2_Set")]
         [HarmonyPatch(typeof(fldTitle), "fldTitleMiniStart2")]
         public static class Loaderpatch
         {
