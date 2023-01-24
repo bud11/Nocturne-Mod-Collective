@@ -187,7 +187,7 @@ namespace Nocturne_Minimap
         public static bool ignoreinput = false;
 
         //tied to the vanilla update loop because that lets me ignore select inputs specifically when I need to 
-        //might be able to link to framerate mod via a kind of true update loop function I could add to framerate mod
+        //might be able to link to framerate mod by grabbing unity object position instead of internal position but unlikely
 
         [HarmonyPatch(typeof(dds3DefaultMain), "Update")]
         public static class defaultloop
