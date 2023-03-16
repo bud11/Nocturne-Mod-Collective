@@ -1,4 +1,4 @@
-﻿
+
 //c# stuff
 using System.Reflection;
 using System.IO;
@@ -17,7 +17,8 @@ using Il2Cppbasic_H;
 using Il2CppXRD773Unity;
 using Il2Cpp;
 using Il2CppInterop.Runtime;
-
+using System.Collections;
+using MelonLoader.CoreClrUtils;
 
 [assembly: MelonInfo(typeof(Nocturne_Graphics_Configurator.NocturneGraphicsConfigurator), "Nocturne Graphics Configurator", "1.0", "vv--")]
 [assembly: MelonGame(null, "smt3hd")]
@@ -52,6 +53,8 @@ namespace Nocturne_Graphics_Configurator
         public static GameObject ui;
         public static PostProcessStackV2Manager ppsv2;
 
+
+        
         //whitelist of UI objects to hide/show
         public static List<string> uiremoves = new List<string>() { "talkUI", "fieldUI", "bparty(Clone)", "bmenuset(Clone)", "buttonguide01", "fldName", "bturnset(Clone)", "bannounce(Clone)" };
 
@@ -101,20 +104,11 @@ namespace Nocturne_Graphics_Configurator
                 currentvsync = VSyncMode.Value;
             }
 
-        }
-
-
-        //Destroy render forcer object responsible for enforcing 30fps
-        public override void OnSceneWasInitialized(int buildIndex, string sceneName)
-        {
-            var renderforcer = GameObject.Find("ForceRenderRate");
-
-            if (renderforcer != null)
-            {
-                UnityEngine.Object.Destroy(renderforcer);
-            }
+            currentFrameTime = Time.realtimeSinceStartup;
+            MelonCoroutines.Start(WaitForNextFrame());
 
         }
+
 
 
         //scan for canvas_ui, if found then scan for whitelisted objects and add canvasgroups to any that dont have them so they can be non-destructively hidden
@@ -158,16 +152,6 @@ namespace Nocturne_Graphics_Configurator
         }
 
 
-        //Returns true at a rate that should be 30fps or at least very close regardless of the framerate
-        public static bool Determine30fps()
-        {
-            //im an idiot and Im not sure what the correct math should be here.
-
-            return (Math.Abs(FrameReal) < 0.99999999999999f || speedhack);
-            //return (Math.Abs(FrameReal) < 0.01f || speedhack);
-        }
-
-
         //regular lateupdate function, used for constant mod input and configuration
         public override void OnLateUpdate()
         {
@@ -175,7 +159,6 @@ namespace Nocturne_Graphics_Configurator
             if (Application.targetFrameRate != CurrentFramerate)
             {
                 Application.targetFrameRate = CurrentFramerate;
-                Time.fixedDeltaTime = 1f / CurrentFramerate;
             }
 
             if (QualitySettings.vSyncCount != currentvsync)
@@ -188,18 +171,23 @@ namespace Nocturne_Graphics_Configurator
                 Unlock = !Unlock;
 
                 LoggerInstance.Msg("Framerate mod set to " + Unlock.ToString());
+                
+                currentFrameTime = Time.realtimeSinceStartup;
 
                 if (Unlock)
                 {
                     CurrentFramerate = Framerate.Value;
                     currentvsync = VSyncMode.Value;
+
                 }
                 else
                 {
-                    CurrentFramerate = 30;
+                    CurrentFramerate = 9999;
                     currentvsync = originalvsync;
                 }
+
             }
+
 
             if (Input.GetKeyDown(UIToggleKey.Value))
             {
@@ -234,6 +222,17 @@ namespace Nocturne_Graphics_Configurator
                 }
 
             }
+
+
+            if (speedhack)
+            {
+                Time.fixedDeltaTime = 1f / CurrentFramerate;
+            }
+            else
+            {
+                Time.fixedDeltaTime = 1f / 30f;
+            }
+
 
             //debug visualise interpolation objects
             foreach (KeyValuePair<dds3Basic_t, GameObject> x in interpolationobjlist)
@@ -276,8 +275,137 @@ namespace Nocturne_Graphics_Configurator
         /// PATCHES BEGIN HERE
         /// </summary>
 
-
         #region CORE PATCHES
+
+
+
+        //kills the default renderforcer responsible for enforcing 30fps
+
+        [HarmonyPatch(typeof(ForceRenderRate), "Start")]
+        public static class RenderForcerPatch
+        {
+            public static void Prefix(ref ForceRenderRate __instance, ref bool __runOriginal)
+            {
+                __runOriginal = false;
+                GameObject.Destroy(__instance.gameObject);
+            }
+        }
+
+        //the renderforcer uses this exact code literally ripped from a unity blog lmao https://blog.unity.com/technology/precise-framerates-in-unity
+        //though its been modified to set itself to 30 constantly, or some other object does that, Im not sure. Im not dealing with it, instead Im replacing it.
+
+        //ive modified that coroutine a little and added it here, started up in the init function
+
+        float currentFrameTime;
+        IEnumerator WaitForNextFrame()
+        {
+            while (true)
+            {
+                yield return new WaitForEndOfFrame();
+                currentFrameTime += 1.0f / 30f;
+                var t = Time.realtimeSinceStartup;
+                var sleepTime = currentFrameTime - t - 0.01f;
+
+
+                //should fix stalls?
+                if (!Application.isFocused)
+                {
+                    currentFrameTime = Time.realtimeSinceStartup;
+                }
+
+
+                if (!Unlock)
+                {
+                    if (sleepTime > 0)
+                        System.Threading.Thread.Sleep((int)(sleepTime * 1000));
+                    while (t < currentFrameTime)
+                        t = Time.realtimeSinceStartup;
+                }
+
+            }
+        }
+
+
+
+
+
+
+        public static dds3DefaultMain kernel;
+
+
+        //these are various bools to control the interpolation and other visual patches being active or not
+
+        public static bool catchup = false;
+        public static bool gamelogicrun = false;
+        public static bool boolforafterdoneloop = false;
+        public static bool boolforlateframe = false;
+
+
+        //makes the game loop method get called from this script instead of from the actual game
+        //that way I can place it into fixedupdate and separate it from the actual target framerate
+        public override void OnFixedUpdate()
+        {
+            //allow methods to run as originally programmed if not unlocked
+            if (!Unlock || !Application.isFocused)
+            {
+                return;
+            }
+
+            gamelogicrun = true;
+            boolforafterdoneloop = true;
+            boolforlateframe = true;
+            if (kernel != null && kernel.isActiveAndEnabled && kernel.initflag)
+            {
+
+                dds3KernelMain.m_dds3KernelMainLoop();
+
+            }
+            gamelogicrun = false;
+
+        }
+
+        //makes sure the game loop is only ran on fixedupdate (if unlocked)
+        [HarmonyPatch(typeof(dds3KernelMain), "m_dds3KernelMainLoop")]
+        public static class mainloop
+        {
+            public static void Prefix(ref bool __runOriginal)
+            {
+                __runOriginal = gamelogicrun || !Unlock;
+            }
+        }
+
+
+        //Returns true at a rate that should be almost exactly 30fps
+        public static bool Determine30fps()
+        {
+            return (boolforafterdoneloop || speedhack);
+        }
+
+        //Returns true at a rate that should be almost exactly 30fps but set forward one frame
+        //mainly use this for lateupdate patches and/or patches that affect other objects
+        public static bool DetermineLate30fps()
+        {
+            return (boolforlateframe || speedhack);
+        }
+
+
+        //call this when you want to warp objects to real positions immediately to prevent interpolation jitter, eg when teleporting
+        public static void Catchup()
+        {
+            if (MODDEBUGMODE)
+            {
+                Msg("caught up");
+            }
+
+            catchup = true;
+
+        }
+
+
+
+
+
+
 
         //Patch to track crucial/character objects
         public static Dictionary<dds3Basic_t, GameObject> interpolationobjlist = new Dictionary<dds3Basic_t, GameObject>();
@@ -286,46 +414,67 @@ namespace Nocturne_Graphics_Configurator
         public static GameObject cam;
         public static GameObject camposlast;
 
-        //modified in main update loop, used for nth frame 30fps calcuation
-        public static float FrameReal = 0;
-
         //debug timer to measure realframe time
         public static System.Diagnostics.Stopwatch realframetime = new System.Diagnostics.Stopwatch();
 
 
+        //this exists so I can set the control bool during the start of the next frame, to allow lateupdate patches to work
+        public static bool lateupdatetag = false;
+
+
+        public static float RealDeltaTime = 0.0f;
+
+
         //Patches the main loop of the game - the logic here interpolates objects on non-real frames and clears crucial lists
+        //THIS SHOULD RUN AT THE ACTUAL FRAMERATE, NOT 30. 
+
+        //the original intention of this logic was to kind of sandwich the normal logic, for example (prefix -> game loop -> postfix), (prefix -> no game loop but interpolation -> postfix), and so on..
+        //but now that the logic is being called from fixedupdate instead of nestled in here in a determined way, this kind of just acts in parallel in any execution order it feels like.
+        //Im honestly surprised it even works, it seems like it shouldnt. the whole reason I didnt initially use fixedupdate initially was I thought it wouldnt work (at least not smoothly).
+
+
         [HarmonyPatch(typeof(dds3DefaultMain), "Update")]
         public static class MainLoopPatch
         {
             public static void Prefix(ref dds3DefaultMain __instance)
             {
+                if (!Application.isFocused)
+                {
+                    return;
+                }
 
-                FrameReal = (FrameReal + 1) % (CurrentFramerate / 30f);
+                if (!boolforafterdoneloop && boolforlateframe)
+                {
+                    boolforlateframe = false;
+                }
+                catchup = false;
+
+                //this still somehow allows some transition errors not present in OG and I dont know why, may be out of my control?
+                if (!Unlock)
+                {
+                    gamelogicrun = true;
+                    boolforafterdoneloop = true;
+                    boolforlateframe = true;
+                    catchup = true;
+                }
+
+
+                //fixes the entire keyboard missed input issue, I kid you not
+                //how the hell this works and how the hell the game knows what inputs it missed is a complete mystery to me
+                SteamInputUtil.Instance.bAnyKeyDown = true;
+
+
+                kernel = __instance;
+
+
+                //did this because reading deltatime from a fixedupdate call very unhelpfully just gives you fixeddeltatime
+                RealDeltaTime = Time.deltaTime;
+
 
                 //if a new frame
                 if (!Determine30fps())
                 {
-                    //call any calls from last frame to lift them up to 60
-                    foreach(Tuple<dynamic, MethodBase, object[]> call in calls)
-                    {
-                        call.Item2.Invoke(call.Item1, call.Item3);
-                    }
-
-                    if (MODDEBUGMODE)
-                    {
-                        if (realframetime.IsRunning)
-                        {
-                            realframetime.Stop();
-                            if (targsvis)
-                            {
-                                MelonLogger.Msg($"Since last real frame: {realframetime.ElapsedMilliseconds}ms");
-                                MelonLogger.Msg(System.Drawing.Color.DarkBlue, $"game running at approximately {((1000 / 30f) / realframetime.ElapsedMilliseconds) * 100f}% speed");
-                            }
-                        }
-                        realframetime.Restart();
-                    }
-
-                    float delcomp = 30f / CurrentFramerate;
+                    float delcomp = 30f / (1f / RealDeltaTime);
 
                     //interpolate unit objects
                     if (interpolationobjlist != null)
@@ -358,8 +507,6 @@ namespace Nocturne_Graphics_Configurator
                                     ch.transform.rotation = dest.rotation;
                                 }
 
-                                //ch.transform.position = Vector3.zero;
-
                             }
 
                         }
@@ -384,27 +531,21 @@ namespace Nocturne_Graphics_Configurator
 
                     }
 
-
-                }
-                else
-                {
-                    lastframepresschecks.Clear();
-                    calls.Clear();
                 }
 
             }
 
-
-
             public static void Postfix()
             {
+                if (!Application.isFocused)
+                {
+                    return;
+                }
+
                 ///if original frame, set everything back to last original frame and store intended current frame
 
                 if (Determine30fps())
                 {
-                    inputretainpress.Clear();
-
-                    /*keyspressed.Clear();*/
 
                     if (interpolationobjlist != null && interpolationobjlist.Count != 0)
                     {
@@ -428,11 +569,13 @@ namespace Nocturne_Graphics_Configurator
                                 Vector3 np = ch.transform.position;
                                 Quaternion nr = ch.transform.rotation;
 
-                                if (!speedhack && CurrentFramerate != 30)
+
+                                if (!speedhack && Unlock && !catchup)
                                 {
                                     ch.transform.position = interpolationobjlist[x].transform.position;
                                     ch.transform.rotation = interpolationobjlist[x].transform.rotation;
                                 }
+
 
                                 interpolationobjlist[x].transform.position = np;
                                 interpolationobjlist[x].transform.rotation = nr;
@@ -443,9 +586,9 @@ namespace Nocturne_Graphics_Configurator
 
                     }
 
-                    if (GlobalData.kernelObject != null)
+                    if (kernel != null)
                     {
-                        cam = GlobalData.kernelObject.GetMainCamera();
+                        cam = kernel.GetMainCamera();
 
                         if (cam != null && cam.transform != null)
                         {
@@ -454,7 +597,7 @@ namespace Nocturne_Graphics_Configurator
 
                             if (camposlast != null)
                             {
-                                if (!speedhack && CurrentFramerate != 30)
+                                if (!speedhack && Unlock && !catchup)
                                 {
                                     cam.transform.position = camposlast.transform.position;
                                     cam.transform.rotation = camposlast.transform.rotation;
@@ -471,15 +614,12 @@ namespace Nocturne_Graphics_Configurator
 
                         }
                     }
+
                 }
 
                 ///IF NOT AN ORIGINAL FRAME
                 else
                 {
-                    //force certain calls to be one frame ahead to avoid interpolation lag
-                    //fldPlayer.fldPlayerPosRot();
-                    //fldPlayer.fldPlayerCalc();
-
 
                     //clear any outdated interpolation trackers because the delete/destroy calls are either unreliable or not used
 
@@ -524,25 +664,24 @@ namespace Nocturne_Graphics_Configurator
 
                     interpolationobjlist = newl;
 
-
-
                 }
 
-
-
+                boolforafterdoneloop = false;
             }
 
         }
 
 
+
         //Patch to list crucial/character objects for above interpolation
+
         [HarmonyPatch(typeof(dds3UnitObjectBasic), "dds3AddUnitObjectBasic")]
         public static class InstanceStorage
         {
             public static void Postfix(ref dds3Basic_t __result)
             {
-                //crucialinstances.Add(__result);
 
+                //creates a debug sphere 
                 GameObject empty = GameObject.CreatePrimitive(PrimitiveType.Sphere);
                 empty.transform.localScale = Vector3.one * 0.2f;
                 empty.GetComponent<MeshRenderer>().enabled = false;
@@ -560,19 +699,41 @@ namespace Nocturne_Graphics_Configurator
         }
 
 
+
+        //place methods here that teleport objects so they can use Catchup() to prevent incorrect interpolation transition
+
+        [HarmonyPatch]
+        public static class TeleportationPatch
+        {
+            public static IEnumerable<MethodBase> TargetMethods()
+            {
+                //prevent opening/closing map jitter
+                yield return AccessTools.Method(typeof(fldAutoMap), "fldAutoMapSeqEnd");
+                yield return AccessTools.Method(typeof(fldAutoMap), "fldAutoMapSeqStart");
+
+                //this one I'm using as a target for area/subarea loading just like minimap mod
+                yield return AccessTools.Method(typeof(fldTitle), "fldTitleMiniStart2");
+
+            }
+
+            public static void Postfix()
+            {
+                Catchup();
+            }
+
+        }
+
+
+
+
         //this patches a variety of methods that need to be locked to 30fps
         [HarmonyPatch]
-        public static class LockTo30FPS
+        public static class LockToLate30FPS
         {
             public static IEnumerable<MethodBase> TargetMethods()
             {
 
                 //philosophy is to patch as little as possible here, patching multiple things or trying to create new calls often goes wrong
-
-
-                //main logic calls from kernel update loop
-                yield return AccessTools.Method(typeof(dds3KernelCore), "dds3ProcessMain");
-                yield return AccessTools.Method(typeof(dds3KernelCore), "ExecUnloadUnusedAssets");
 
 
                 //fixes particles flickering
@@ -585,14 +746,13 @@ namespace Nocturne_Graphics_Configurator
 
                 //fix flickering bloom
                 yield return AccessTools.Method(typeof(PostProcessStackV2Manager), "Update");
+                   
 
-
-                //doesnt completely fix flickering but makes it a lot less drastic
-                //I imagine the real way to completely remove flickering and have this be 100% correct would be to patch PostBlur.OnRenderImage to preserve the accumBlur created at 30fps
+                //part of a fix for flickering accum blur processing, rest is at the bottom
                 yield return AccessTools.Method(typeof(PostBlur), "Update");
-                yield return AccessTools.Method(typeof(effBlur_Filter), "dds3Effect_UpdateBigin");
-                yield return AccessTools.Method(typeof(effBlur_Filter), "dds3Effect_UpdateEnd");
                 
+
+                //not sure if this is needed or not, just added it anyway
                 yield return AccessTools.Method(typeof(RippleEffect), "Update");
 
 
@@ -604,42 +764,17 @@ namespace Nocturne_Graphics_Configurator
 
             public static void Prefix(ref bool __runOriginal)
             {
-                __runOriginal = Determine30fps();
+                __runOriginal = DetermineLate30fps();
 
-            }
-
-
-            static Exception Finalizer(Exception __exception)
-            {
-                if (__exception != null)
-                {
-                    Msg(__exception.ToString());
-                }
-                return null;
             }
 
         }
 
 
-
-        //currently unused, should probably stay that way...
-        //this is the opposite of locking to 30 - it creates new calls for the real framerate with same variables as the real calls of last real frame
-        //potentially useful in a situation where the original call site is limited to 30
-        public static List<Tuple<dynamic, MethodBase, object[]>> calls = new List<Tuple<dynamic, MethodBase, object[]>>();
-        //[HarmonyPatch]
-        public static class BringToTarget
-        {
-            public static void Prefix(ref object[] __args, MethodBase __originalMethod, ref dynamic __instance)
-            {
-                if (Determine30fps())
-                {
-                    calls.Add(new Tuple<dynamic, MethodBase, object[]>(__instance, __originalMethod, __args));
-                }
-            }
-        }
 
 
         #endregion
+
 
 
         #region INPUT PATCHES
@@ -650,134 +785,12 @@ namespace Nocturne_Graphics_Configurator
         {
             public static void Postfix(ref SteamMouse __instance)
             {
-                __instance.Axis = ((__instance.Axis / Time.deltaTime) / 30);
-
-            }
-
-        }
-
-
-        /*
-         * This whole section isnt in the current release. It was intended to record any input checks created in the last frame, 
-         * then check them again in the next frames leading up to the real frame and record the result.
-         * Then when it became a new frame again, tell the game that those inputs were all pressed as if they were all pressed at the same time on a 30fps frame.
-         * 
-         * For some reason it doesnt work properly though. Most of it does, but a lot of one shot inputs dont.
-         * The main input checking methods are the ones like DDS3_PADCHECK_PRESS in dds3padmanager.
-         * Also be aware of the methods that contain the word chkCommonInput. I feel like I couldnt get it to fully work because I was missing something to do with those maybe.
-         * Including those chkCommonInput methods in the input recording patch below, and changing result recording to dynamic instead of bool to allow for uint returns, does improve things a little, but isnt a fix.
-        */
-
-
-        //list of real calls made on last real frame
-        public static List<Tuple<MethodBase, object[]>> lastframepresschecks = new List<Tuple<MethodBase, object[]>>();
-
-        //list of lists of additional calls that returned true on each new frame
-        public static List<List<Tuple<MethodBase, object[]>>> inputretainpress = new List<List<Tuple<MethodBase, object[]>>>();
-
-
-        //This creates input calls from the last real frame
-        [HarmonyPatch(typeof(dds3PadManager), "dds3PadUpdate")]
-        public static class MainInputPatch
-        {
-            public static void Postfix()
-            {
-
-                //if new frame, begin cache input results
-                if (!Determine30fps())
-                {
-                    inputretainpress.Add(new List<Tuple<MethodBase, object[]>>());
-
-                    //evaluate every check that was in last frame
-                    foreach (Tuple<MethodBase, object[]> x in lastframepresschecks)
-                    {
-
-                        x.Item1.Invoke(null, x.Item2);
-
-                    }
-                }
+                //MelonLogger.Msg(1f / Time.deltaTime);
+                __instance.Axis = ((__instance.Axis / RealDeltaTime) / 30f);
             }
         }
 
-
-        //padcheck trig is for one shot
-        //padcheck press is for constant
-        //Never checked what rep is for, probably repeating, but I dont know how thats differing than padcheck press.
-
-        //this patches every input method and forces it to return true if it were true on a fake frame
-        //that way input runs at actual framerate but is kinda condensed down to 30 so the game logic sees it all
-        [HarmonyPatch]
-        public static class InputCallPatch
-        {
-            public static IEnumerable<MethodBase> TargetMethods()
-            {
-                foreach (MethodBase m in typeof(dds3PadManager).GetMethods())
-                {
-                    //returns the input check methods
-                    if (m.Name.StartsWith("DDS3_"))
-                    {
-                        //Msg(m.Name + " patched");
-                        yield return m;
-                    }
-                }
-
-            }
-
-            public static void Prefix(MethodBase __originalMethod, object[] __args, ref bool __runOriginal, ref bool __result)
-            {
-
-                //if original frame, check if input was pressed on fake frames and return if true
-                if (Determine30fps())
-                {
-                    Tuple<MethodBase, object[]> res = new Tuple<MethodBase, object[]>(__originalMethod, __args);
-
-                    lastframepresschecks.Add(res);
-
-                    foreach (List<Tuple<MethodBase, object[]>> framelist in inputretainpress)
-                    {
-                        foreach (Tuple<MethodBase, object[]> entry in framelist)
-                        {
-                            if (entry.Item1.Equals(res.Item1) && Enumerable.SequenceEqual(entry.Item2, res.Item2))
-                            {
-
-                                __runOriginal = false;
-                                __result = true;
-
-                                //Msg($"found! {string.Join(", ", __args)}");
-
-                                return;
-                            }
-                        }
-                    }
-                }
-
-            }
-
-            //this is definitely returning true when it should
-            //the cause has to be some method in between the logic and this input check filtering out the result.
-
-            public static void Postfix(MethodBase __originalMethod, object[] __args, ref bool __result)
-            {
-
-                //if input check was true then add it to the list to be pushed in next real frame
-                if (!Determine30fps() && __result)
-                {
-                    //get newest frame input list and add input to it
-                    inputretainpress[inputretainpress.Count - 1].Add(new Tuple<MethodBase, object[]>(__originalMethod, __args));
-                }
-
-            }
-
-            static Exception Finalizer(Exception __exception)
-            {
-                if (__exception != null)
-                {
-                    Msg(__exception.ToString());
-                }
-                return null;
-            }
-        }
-
+        //fix for keyboard input dropping is in the big update patch because its comically simple and small
 
 
         #endregion
@@ -786,14 +799,16 @@ namespace Nocturne_Graphics_Configurator
         #region MISCELLANEOUS PATCHES
 
 
+
         //patch to ensure battle demons and other animations that rely on this have unlocked animation framerates
         [HarmonyPatch(typeof(FrameAnime), "LateUpdate")]
         public static class FrameAnimePatch
         {
             public static void Postfix(ref FrameAnime __instance, ref bool __runOriginal)
             {
-                __instance.time = 1f / CurrentFramerate;
+                __instance.time = RealDeltaTime;
 
+                //there might be a better way to do this but this works without issue I think
                 __instance.StepFrame();
 
             }
@@ -813,21 +828,50 @@ namespace Nocturne_Graphics_Configurator
 
 
 
-        //start of a patch to fix blur, couldnt get it to work, I dont know a lot about unity render textures
+        //patches flickering accumulation motion blur processing aka "flickering lighting"
+        //not sure if this needs to be exactly this complicated but this works
 
-        /*
+        public static bool refreshblit = true;
+        public static bool nowmodetemp = false;
+
         [HarmonyPatch(typeof(PostBlur), "OnRenderImage")]
-        public static class renderfix
+        public static class renderfix1
+        {
+
+            public static void Prefix(ref PostBlur __instance)
+            {
+                if (DetermineLate30fps())
+                {
+                    nowmodetemp = dds3KernelDraw.Postblur_AccumTex_NowMode;
+                }
+
+                if (Unlock && !speedhack && nowmodetemp)
+                {
+                    __instance.refresh_Blit = refreshblit;
+                }
+            }
+        }
+
+
+        [HarmonyPatch(typeof(dds3DefaultMain), "FieldFilterOn")]
+        public static class FieldFilter1
         {
             public static void Prefix()
             {
-                if (!Determine30fps())
-                {
-                    //dds3KernelDraw.Postblur_refresh = false;
-                    stfMain.Blur.refresh_Blit = false;
-                }
+                refreshblit = true;
             }
-        }*/
+        }
+
+        [HarmonyPatch(typeof(dds3DefaultMain), "FieldFilterOff")]
+        public static class FieldFilter2
+        {
+            public static void Prefix()
+            {
+                refreshblit = false;
+            }
+        }
+
+
 
         #endregion
 
@@ -839,5 +883,3 @@ namespace Nocturne_Graphics_Configurator
 
     }
 }
-
-
