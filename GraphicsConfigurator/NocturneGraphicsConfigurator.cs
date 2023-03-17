@@ -2,9 +2,8 @@
 //c# stuff
 using System.Reflection;
 using System.IO;
-using System;
+
 using System.Collections.Generic;
-using System.Linq;
 
 //unity stuff
 using MelonLoader;
@@ -18,7 +17,7 @@ using Il2CppXRD773Unity;
 using Il2Cpp;
 using Il2CppInterop.Runtime;
 using System.Collections;
-using MelonLoader.CoreClrUtils;
+using System.Linq;
 
 [assembly: MelonInfo(typeof(Nocturne_Graphics_Configurator.NocturneGraphicsConfigurator), "Nocturne Graphics Configurator", "1.0", "vv--")]
 [assembly: MelonGame(null, "smt3hd")]
@@ -33,6 +32,7 @@ namespace Nocturne_Graphics_Configurator
         public static MelonPreferences_Category ModSettings;
         public static MelonPreferences_Entry<int> Framerate;
         public static MelonPreferences_Entry<int> VSyncMode;
+        //public static MelonPreferences_Entry<Vector2Int> ResolutionOverride;
         public static MelonPreferences_Entry<string> FramerateToggleKey;
         public static MelonPreferences_Entry<bool> CustomFramerateOnLaunch;
         public static MelonPreferences_Entry<string> UIToggleKey;
@@ -75,6 +75,7 @@ namespace Nocturne_Graphics_Configurator
             BloomEnabled = ModSettings.CreateEntry("Bloom", true);
             Framerate = ModSettings.CreateEntry("Framerate", 60);
             CustomFramerateOnLaunch = ModSettings.CreateEntry("CustomFramerateOnLaunch", false);
+            //ResolutionOverride = ModSettings.CreateEntry("ResolutionOverride", new Vector2Int(1920, 1080));
             VSyncMode = ModSettings.CreateEntry("VSyncModeWhenCustomFramerate", 1);
             FramerateToggleKey = ModSettings.CreateEntry("FramerateToggleKey", "f11");
             SpeedhackToggleKey = ModSettings.CreateEntry("SpeedhackToggleKey", "f10");
@@ -356,12 +357,18 @@ namespace Nocturne_Graphics_Configurator
             boolforlateframe = true;
             if (kernel != null && kernel.isActiveAndEnabled && kernel.initflag)
             {
-
+                catchup = false;
                 dds3KernelMain.m_dds3KernelMainLoop();
 
+                //this is the only way I can make this work for some reason, call the main game loop to process 1 frame ahead
+                if (catchup)
+                {
+                    dds3KernelMain.m_dds3KernelMainLoop();
+                }
+
+                //Catchup();
             }
             gamelogicrun = false;
-
         }
 
         //makes sure the game loop is only ran on fixedupdate (if unlocked)
@@ -371,6 +378,7 @@ namespace Nocturne_Graphics_Configurator
             public static void Prefix(ref bool __runOriginal)
             {
                 __runOriginal = gamelogicrun || !Unlock;
+                
             }
         }
 
@@ -392,18 +400,10 @@ namespace Nocturne_Graphics_Configurator
         //call this when you want to warp objects to real positions immediately to prevent interpolation jitter, eg when teleporting
         public static void Catchup()
         {
-            if (MODDEBUGMODE)
-            {
-                Msg("caught up");
-            }
-
+            //Msg("catchup");
             catchup = true;
 
         }
-
-
-
-
 
 
 
@@ -438,6 +438,7 @@ namespace Nocturne_Graphics_Configurator
         {
             public static void Prefix(ref dds3DefaultMain __instance)
             {
+
                 if (!Application.isFocused)
                 {
                     return;
@@ -447,7 +448,7 @@ namespace Nocturne_Graphics_Configurator
                 {
                     boolforlateframe = false;
                 }
-                catchup = false;
+
 
                 //this still somehow allows some transition errors not present in OG and I dont know why, may be out of my control?
                 if (!Unlock)
@@ -455,12 +456,12 @@ namespace Nocturne_Graphics_Configurator
                     gamelogicrun = true;
                     boolforafterdoneloop = true;
                     boolforlateframe = true;
-                    catchup = true;
+
                 }
 
 
                 //fixes the entire keyboard missed input issue, I kid you not
-                //how the hell this works and how the hell the game knows what inputs it missed is a complete mystery to me
+                //it seems like this works by tricking the game into looking for keyboard inputs constantly instead of only on real frames
                 SteamInputUtil.Instance.bAnyKeyDown = true;
 
 
@@ -496,7 +497,7 @@ namespace Nocturne_Graphics_Configurator
                                     ch = x.gameObject;
                                 }
 
-                                if (Vector3.Distance(ch.transform.position, dest.position) < 2.5f)
+                                if (Vector3.Distance(ch.transform.position, dest.position) < 2.5f && !catchup && Unlock)
                                 {
                                     ch.transform.position = Vector3.Lerp(ch.transform.position, dest.position, delcomp);
                                     ch.transform.rotation = Quaternion.Slerp(ch.transform.rotation, dest.rotation, delcomp);
@@ -517,7 +518,7 @@ namespace Nocturne_Graphics_Configurator
                     {
                         //hopefully a fair distance to stop interpolating at
 
-                        if (Vector3.Distance(cam.transform.position, camposlast.transform.position) < 2.5f)
+                        if (Vector3.Distance(cam.transform.position, camposlast.transform.position) < 2.5f && !catchup && Unlock)
                         {
                             cam.transform.position = Vector3.Lerp(cam.transform.position, camposlast.transform.position, delcomp);
                             cam.transform.rotation = Quaternion.Slerp(cam.transform.rotation, camposlast.transform.rotation, delcomp);
@@ -546,7 +547,6 @@ namespace Nocturne_Graphics_Configurator
 
                 if (Determine30fps())
                 {
-
                     if (interpolationobjlist != null && interpolationobjlist.Count != 0)
                     {
                         List<dds3Basic_t> args = new List<dds3Basic_t>(interpolationobjlist.Keys);
@@ -714,6 +714,30 @@ namespace Nocturne_Graphics_Configurator
                 //this one I'm using as a target for area/subarea loading just like minimap mod
                 yield return AccessTools.Method(typeof(fldTitle), "fldTitleMiniStart2");
 
+
+                //these are for object teleportation moments in battle
+                //not sure if this is thorough or not thorough enough, but it should cover almost all camera situations
+
+                foreach (MethodBase m in typeof(nbCameraSkill).GetMethods().Union(typeof(nbCameraBoss).GetMethods()))
+                {
+                    if (((m.Name.Contains("Cut") && m.Name.Contains("Init")) || (m.Name.Contains("Init") && !m.Name.Contains("End"))) && !m.IsSpecialName)
+                    {
+                        yield return m;
+                    }
+                }
+
+                //yield return AccessTools.Method(typeof(nbCameraSkill), "nbCameraState_SkillAttack_Init");
+
+                foreach (MethodBase m in typeof(nbCameraCommand).GetMethods())
+                {
+                    if (m.Name.Contains("_Set") && !m.IsSpecialName)
+                    {
+                        yield return m;
+                    }
+                }
+
+
+                
             }
 
             public static void Postfix()
