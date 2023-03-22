@@ -12,7 +12,7 @@ using Il2Cpp;
 using Nocturne_Minimap;
 
 
-[assembly: MelonInfo(typeof(ModClass), "Minimap mod", "1.3", "vv--")]
+[assembly: MelonInfo(typeof(ModClass), "Minimap mod", "1.4", "vv--")]
 [assembly: MelonGame(null, "smt3hd")]
 
 namespace Nocturne_Minimap
@@ -186,6 +186,8 @@ namespace Nocturne_Minimap
 
         public static bool ignoreinput = false;
 
+        public static int lastfloor = 0;
+
         //tied to the vanilla update loop because that lets me ignore select inputs specifically when I need to 
         //might be able to link to framerate mod by grabbing unity object position instead of internal position but unlikely
 
@@ -195,108 +197,125 @@ namespace Nocturne_Minimap
             public static void Postfix()
             {
 
-                //if setup definitely exists
-                if (originalMap != null && fcompass != null && clonemap != null)
+                //if game is definitely ready for logic to be ran
+                if (Application.isFocused && GlobalData.kernelObject != null && GlobalData.kernelObject.isActiveAndEnabled && GlobalData.kernelObject.initflag && fldGlobal.fldGb.NoInpAmCnt == 0 && fldGlobal.fldGb.NoInpPlCnt == 0)
                 {
-                    //if the main vanilla map isnt open, force it to draw current floor at current position, so that minimap can reflect it
-                    //AND if the map is actually capable of being opened at this moment
-                    if (fldAutoMap.AutoMapSeq == 0 && CanOpenMap())
+
+                    //if setup definitely exists
+                    if (originalMap != null && fcompass != null && clonemap != null)
                     {
-                        custombase.active = true;
-
-                        //based on original code, sets map floor and cam position to where the player is at all times
-
-
-                        fldAutoMap.gAmap_NowFloor = fldGlobal.fldGb.AmFloor;
-                        fldAutoMap.gAmap_InFloor = fldGlobal.fldGb.AmFloor;
-
-
-                        float x = 0;
-                        float z = 0;
-
-                        fldAutoMap.fldAutoMapGetAreaPos(fldGlobal.fldGb.areaID, ref x, ref z);
-
-                        //turns out stutter is because of this weird integer requirement
-                        //I do have a good idea of how I could solve this without modifying the method in any way, but I dont have all the information I need to implement it
-                        //basically, I'd offset the actual map root object by the small float difference between the real float position and the rounded integer position
-                        //but I dont know how to convert nocturne coodinates into unity 2D coodinates, I dunno what the multiplier and/or offset is
-
-                        fldAutoMap.gAmap_OfsX = (int)fldGlobal.fldGb.playerX + (int)x;
-                        fldAutoMap.gAmap_OfsZ = (int)fldGlobal.fldGb.playerZ + (int)z;
-
-
-                        //preserve internal map seq mode if it were for some reason changed
-                        int whatever = fldAutoMap.AutoMapSeq;
-
-                        //force map update
-
-                        ignoreinput = true;
-                        audiostop = true;
-
-                        fldAutoMap.fldAutoMapDrawOneArea();
-
-                        ignoreinput = false;
-                        audiostop = false;
-
-                        fldAutoMap.AutoMapSeq = whatever;
-
-                    }
-                    else
-                    {
-                        //hide custom base if map cant render
-                        custombase.active = false;
-                    }
-
-                    //keep player icons in correct positions
-
-                    viewclone.transform.localPosition = viewog.transform.localPosition;
-                    selfclone.transform.localPosition = selfog.transform.localPosition;
-
-                    viewclone.transform.localRotation = viewog.transform.localRotation;
-                    selfclone.transform.localRotation = selfog.transform.localRotation;
-
-
-                    //keep icons in correct positions
-
-                    List<string> found = new List<string>();
-
-                    foreach (Il2CppSystem.Object x in originalMap.transform.Find("autom_icon"))
-                    {
-                        GameObject xgo = x.Cast<Transform>().gameObject;
-
-                        string instanceid = xgo.GetInstanceID().ToString();
-
-                        Transform find = clonemap.transform.Find("autom_icon/" + instanceid);
-                        if (find != null)
+                        //if the main vanilla map isnt open, force it to draw current floor at current position, so that minimap can reflect it
+                        //AND if the map is actually capable of being opened at this moment
+                        if (fldAutoMap.AutoMapSeq == 0 && CanOpenMap())
                         {
-                            find.localPosition = xgo.transform.localPosition;
-                            find.localRotation = xgo.transform.localRotation;
-                        }
+                            custombase.active = true;
 
+                            //based on original code, sets map floor and cam position to where the player is at all times
+
+                            fldAutoMap.gAmap_NowFloor = fldGlobal.fldGb.AmFloor;
+                            fldAutoMap.gAmap_InFloor = fldGlobal.fldGb.AmFloor;
+
+
+                            //refresh map icons if floor just changed
+                            if (lastfloor != fldGlobal.fldGb.AmFloor)
+                            {
+                                Loaderpatch.Postfix();
+                                lastfloor = fldGlobal.fldGb.AmFloor;
+                            }
+
+
+                            float x = 0;
+                            float z = 0;
+
+                            fldAutoMap.fldAutoMapGetAreaPos(fldGlobal.fldGb.areaID, ref x, ref z);
+
+                            //turns out stutter is because of this weird integer requirement
+                            //I do have a good idea of how I could solve this without modifying the method in any way, but I dont have all the information I need to implement it
+                            //basically, I'd offset the actual map root object by the small float difference between the real float position and the rounded integer position
+                            //but I dont know how to convert nocturne coodinates into unity 2D coodinates, I dunno what the multiplier and/or offset is
+
+                            fldAutoMap.gAmap_OfsX = (int)fldGlobal.fldGb.playerX + (int)x;
+                            fldAutoMap.gAmap_OfsZ = (int)fldGlobal.fldGb.playerZ + (int)z;
+
+
+                            //preserve internal map seq mode if it were for some reason changed
+                            int whatever = fldAutoMap.AutoMapSeq;
+
+                            //force map update
+
+                            ignoreinput = true;
+                            audiostop = true;
+
+                            fldAutoMap.fldAutoMapDrawOneArea();
+
+                            ignoreinput = false;
+                            audiostop = false;
+
+                            fldAutoMap.AutoMapSeq = whatever;
+
+                        }
                         else
                         {
-                            GameObject copy = GameObject.Instantiate(xgo.gameObject);
-                            copy.name = instanceid;
-                            copy.transform.SetParent(clonemap.transform.Find("autom_icon"));
-                            copy.transform.localPosition = xgo.transform.localPosition;
-                            copy.transform.localRotation = xgo.transform.localRotation;
-                            find = copy.transform;
-                            find.localScale = Vector3.one;
+                            //hide custom base if map cant render
+                            custombase.active = false;
                         }
-                        found.Add(instanceid);
-                    }
 
-                    //destroy outdated icons
+                        //keep player icons in correct positions
 
-                    foreach (Il2CppSystem.Object b in clonemap.transform.Find("autom_icon"))
-                    {
-                        Transform g = b.Cast<Transform>();
-                        if (!found.Contains(g.name))
+                        viewclone.transform.localPosition = viewog.transform.localPosition;
+                        selfclone.transform.localPosition = selfog.transform.localPosition;
+
+                        viewclone.transform.localRotation = viewog.transform.localRotation;
+                        selfclone.transform.localRotation = selfog.transform.localRotation;
+
+
+                        //keep icons in correct positions
+
+                        List<string> found = new List<string>();
+
+                        foreach (Il2CppSystem.Object x in originalMap.transform.Find("autom_icon"))
                         {
-                            GameObject.Destroy(g.gameObject);
-                        }
-                    }
+                            GameObject xgo = x.Cast<Transform>().gameObject;
 
+                            string instanceid = xgo.GetInstanceID().ToString();
+
+                            Transform find = clonemap.transform.Find("autom_icon/" + instanceid);
+                            if (find != null)
+                            {
+                                find.localPosition = xgo.transform.localPosition;
+                                find.localRotation = xgo.transform.localRotation;
+
+                                find.gameObject.active = xgo.activeSelf;
+                            }
+
+                            else
+                            {
+                                GameObject copy = GameObject.Instantiate(xgo.gameObject);
+                                copy.name = instanceid;
+                                copy.transform.SetParent(clonemap.transform.Find("autom_icon"));
+                                copy.transform.localPosition = xgo.transform.localPosition;
+                                copy.transform.localRotation = xgo.transform.localRotation;
+
+                                copy.gameObject.active = xgo.gameObject.activeSelf;
+
+                                find = copy.transform;
+                                find.localScale = Vector3.one;
+                            }
+                            found.Add(instanceid);
+                        }
+
+                        //destroy outdated icons
+
+                        foreach (Il2CppSystem.Object b in clonemap.transform.Find("autom_icon"))
+                        {
+                            Transform g = b.Cast<Transform>();
+                            if (!found.Contains(g.name))
+                            {
+                                GameObject.Destroy(g.gameObject);
+                            }
+                        }
+
+                    }
                 }
             }
         }
@@ -310,14 +329,23 @@ namespace Nocturne_Minimap
             {
                 if (fcompass != null)
                 {
-                    fcompass.transform.position += new Vector3(-55, 55, 0);
+                    float offset = 55;
+                    //now takes into account screen size
+                    fcompass.transform.position += new Vector3(-offset * (Screen.width / 1920f), offset * (Screen.height / 1080f), 0);
+
+                    //Msg((Screen.width / 1920f));
                 }
             }
         }
 
 
+
+
         //dont run auto map clear, just hide objects
         //might require custom garbage collection later, not sure
+
+        //this might be the source of lag spikes, but my VS diagnostics dont show a memory leak or anything...
+
         [HarmonyPatch(typeof(fldAutoMap), "fldAutoMapFree")]
         public static class freepatch
         {
@@ -354,12 +382,20 @@ namespace Nocturne_Minimap
                     CreateSetup();
 
                     fldAutoMap.fldAutoMapSeqEnd();
+
+
+                    //dont cancel out input in this scenario
+                    fldGlobal.fldGb.NoInpAmCnt = 0;
+                    fldGlobal.fldGb.NoInpPlCnt = 0;
+
                 }
 
                 audiostop = false;
 
             }
         }
+
+
 
         //stops the minimap opening sound from being played when Im the one who called the start of the sequence
         // + now stops some other methods in fldprocess to avoid ruining game processes
