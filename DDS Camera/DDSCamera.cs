@@ -10,7 +10,8 @@ using System.Collections.Generic;
 using System.Reflection;
 using Il2Cpplibsdf_H;
 
-[assembly: MelonInfo(typeof(dds), "DDS-style fixed camera", "1.3", "vvdashdash")]
+
+[assembly: MelonInfo(typeof(dds), "DDS-style fixed camera", "1.31", "vvdashdash")]
 [assembly: MelonGame(null, "smt3hd")]
 
 namespace DDSFixedCamera
@@ -74,14 +75,14 @@ namespace DDSFixedCamera
         public static bool disablebehavior = false;
 
 
+
+
         //basically the same thing but for the player input relative to camera
         [HarmonyPatch(typeof(fldPlayer), "fldPlayerCalc_Nml")]
         public static class movepatch
         {
             public static void Prefix()
             {
-                disablebehavior = dds3PadManager.DDS3_PADCHECK_PRESS(SDF_PADMAP.RD) || (dds3PadManager.DDS3_PADCHECK_PRESS(SDF_PADMAP.L1) && dds3PadManager.DDS3_PADCHECK_PRESS(SDF_PADMAP.R1));
-
                 if (!disablebehavior && !secondrun)
                 {
                     //responsible for the 8-dir snapping you get rotated by camera
@@ -162,7 +163,7 @@ namespace DDSFixedCamera
 
         [HarmonyPriority(1000)]
         [HarmonyPatch]
-        public static class inputoverride
+        public static class objectlock
         {
             public static IEnumerable<MethodBase> TargetMethods()
             {
@@ -174,7 +175,24 @@ namespace DDSFixedCamera
             public static void Prefix(ref bool __runOriginal)
             {
                 __runOriginal = !secondrun;
-                //__runOriginal = false;
+            }
+        }
+
+
+        //check for input
+        [HarmonyPatch(typeof(dds3KernelMain), "m_dds3KernelMainLoop")]
+        public static class inpchk
+        {
+            public static void Prefix()
+            {
+                if (!Application.isFocused)
+                {
+                    return;
+                }
+                secondrun = false;
+                Forcing = false;
+                disablebehavior = fldGlobal.fldGb.NoInpPlCnt <= 0 && fldGlobal.fldGb.cammode == 0 && (dds3PadManager.DDS3_PADCHECK_PRESS(SDF_PADMAP.RD) || (dds3PadManager.DDS3_PADCHECK_PRESS(SDF_PADMAP.L1) && dds3PadManager.DDS3_PADCHECK_PRESS(SDF_PADMAP.R1)));
+
             }
         }
 
