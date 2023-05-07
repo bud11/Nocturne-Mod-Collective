@@ -19,7 +19,7 @@ using Il2CppXRD773Unity;
 using Il2Cpp;
 using Il2Cppkernel_H;
 
-[assembly: MelonInfo(typeof(Nocturne_Graphics_Configurator.NocturneGraphicsConfigurator), "Nocturne Graphics Configurator", "1.7", "vvdashdash")]
+[assembly: MelonInfo(typeof(Nocturne_Graphics_Configurator.NocturneGraphicsConfigurator), "Nocturne Graphics Configurator", "1.71", "vvdashdash")]
 [assembly: MelonGame(null, "smt3hd")]
 
 namespace Nocturne_Graphics_Configurator
@@ -500,7 +500,11 @@ namespace Nocturne_Graphics_Configurator
                     GlobalData.kernelObject.fldSky.transform.localScale = scaledifference;
                 }
 
-                
+
+                if (GlobalData.kernelObject.encountblur != null)
+                {
+                    GlobalData.kernelObject.encountblur.transform.localScale = scaledifference;
+                }
 
 
                 //offset the menus to be center screen
@@ -565,6 +569,13 @@ namespace Nocturne_Graphics_Configurator
                     slMain._saveUI.transform.localPosition = posoffset;
                 }
 
+
+
+                //character name entry screen
+                if (Nme_Draw.NameUIObj != null)
+                {
+                    Nme_Draw.NameUIObj.transform.localPosition = posoffset;
+                }
 
 
                 //magatama screen
@@ -883,13 +894,15 @@ namespace Nocturne_Graphics_Configurator
                 }
 
 
+                bool FLATMAPWORLD = dds3MatterObjectBasic.GetFHD() != null && dds3MatterObjectBasic.GetFHD().orthographic;
 
                 if (customblackbox != null)
                 {
                     //if a menu is visible, then make sure the black background is visible
                     customblackbox.active = (GlobalData.kernelObject.campObjBG.active || GlobalData.kernelObject.autoMapObj.active ||
                         (title != null && title.active) || (slMain._saveUI != null && slMain._saveUI.gameObject.active) ||
-                        (nbResultProcess.oResult_UI != null && nbResultProcess.oResult_UI.active) || puzzlehelp);
+                        (nbResultProcess.oResult_UI != null && nbResultProcess.oResult_UI.active) || puzzlehelp || 
+                        (Nme_Draw.NameUIObj != null && Nme_Draw.NameUIObj.active) || FLATMAPWORLD);
 
 
                     //make sure button hint is in bounds when in a locked off menu
@@ -897,11 +910,23 @@ namespace Nocturne_Graphics_Configurator
                     {
                         if (!customblackbox.active)
                         {
-                            GlobalData.kernelObject.buttonGuide.transform.localPosition = new Vector3(((1920 / 2f) * scaledifference.x) + 4, -514 * scaledifference.y, 0);
+                            if (GlobalData.kernelObject.buttonGuide != null)
+                            {
+                                GlobalData.kernelObject.buttonGuide.transform.localPosition = new Vector3(((1920 / 2f) * scaledifference.x) + 4, -514 * scaledifference.y, 0);
+                            }
                         }
                         else
                         {
-                            GlobalData.kernelObject.buttonGuide.transform.localPosition = new Vector3((1920 / 2f) + 4, -514, 0);
+                            if (GlobalData.kernelObject.buttonGuide != null)
+                            {
+                                 GlobalData.kernelObject.buttonGuide.transform.localPosition = new Vector3((1920 / 2f) + 4, -514, 0);
+                            }
+
+                            if (GlobalData.kernelObject.areaUI != null)
+                            {
+                                GlobalData.kernelObject.areaUI.transform.localPosition += new Vector3(buffer, 0, 0);
+                            }
+
                         }
 
                         //new Vector3(1624, -514, 0)
@@ -1873,6 +1898,13 @@ namespace Nocturne_Graphics_Configurator
                     {
                         fade2 = fade1;
                         fade1 = fade.color;
+
+                        //check for instant cuts and the like
+                        if (((Vector4)(fade2 - fade1)).magnitude > 0.5f)
+                        {
+                            fade2 = fade1;
+                        }
+
                         fade.color = fade2;
                     }
 
@@ -1987,20 +2019,15 @@ namespace Nocturne_Graphics_Configurator
                         {
                             wind.GetChild(i).transform.localScale = new Vector3(invscale, 1, 1);
                         }
+
+                        //1740 -260 -6
                         __instance.transform.FindChild("ok").localScale = new Vector3(invscale, 1, 1);
                     }
 
 
                     else if (__instance.name.Contains("name"))
-                    {
-                        if (!customblackbox.active)
-                        {
-                            __instance.transform.localPosition = new Vector3(183 - buffer, __instance.transform.localPosition.y, 0);
-                        }
-                        else
-                        {
-                            __instance.transform.localPosition = new Vector3(183 - buffer / 2f, __instance.transform.localPosition.y, 0);
-                        }
+                    { 
+                        __instance.transform.localPosition = new Vector3(183 - buffer, -732 * scaledifference.y, 0);
                     }
                 }
             }
