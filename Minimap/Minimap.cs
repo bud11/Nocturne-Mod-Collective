@@ -12,7 +12,7 @@ using Il2Cpp;
 using Nocturne_Minimap;
 
 
-[assembly: MelonInfo(typeof(ModClass), "Minimap mod", "1.4", "vv--")]
+[assembly: MelonInfo(typeof(ModClass), "Minimap mod", "1.44", "vv--")]
 [assembly: MelonGame(null, "smt3hd")]
 
 namespace Nocturne_Minimap
@@ -36,7 +36,7 @@ namespace Nocturne_Minimap
 
         public static void CreateSetup()
         {
-
+            //Msg("started creation");
             //clean up
             if (custombase != null)
             {
@@ -53,8 +53,23 @@ namespace Nocturne_Minimap
             clonemap.GetComponent<UiHD>().enabled = false;
             clonemap.GetComponent<autoMapUI>().enabled = false;
 
-            GameObject.Destroy(clonemap.transform.Find("autm_frame_oubei").gameObject);
 
+            HashSet<GameObject> destroy = new HashSet<GameObject>();
+            for (int i = 0; i < clonemap.transform.childCount; i++)
+            {
+                if (clonemap.transform.GetChild(i).gameObject.name.Contains("autm_frame"))
+                {
+                    destroy.Add(clonemap.transform.GetChild(i).gameObject);
+                }
+            }
+            foreach (GameObject x in destroy)
+            {
+                GameObject.DestroyImmediate(x);
+            }
+
+            //turns out this only works properly if you're playing in english
+            //GameObject.Destroy(clonemap.transform.Find("autm_frame_oubei").gameObject);
+            
 
             //get compass
             fcompass = GlobalData.kernelObject.enemyUI;
@@ -173,18 +188,10 @@ namespace Nocturne_Minimap
         {
             //ripped checks straight from automapproc ghidra
 
-            if (9 < fldGlobal.fldGb.fieldID)
-            {
-                if (fldGlobal.fldGb.fieldID < 200)
-                {
-                    return true;
-                }
-            }
-            return false;
+            return (9 < fldGlobal.fldGb.fieldID && fldGlobal.fldGb.fieldID < 200);
+
         }
 
-
-        public static bool ignoreinput = false;
 
         public static int lastfloor = 0;
 
@@ -198,16 +205,18 @@ namespace Nocturne_Minimap
                 //if setup definitely exists
                 if (originalMap != null && fcompass != null && clonemap != null)
                 {
+                    
                     //if the main vanilla map isnt open, force it to draw current floor at current position, so that minimap can reflect it
                     //AND if the map is actually capable of being opened at this moment
                     if (fldAutoMap.AutoMapSeq == 0 && CanOpenMap())
                     {
                         custombase.active = true;
 
-                        //refresh map icons if floor just changed
-                        if (lastfloor != fldGlobal.fldGb.AmFloor)
+                        //refresh map icons if floor was changed
+                        if (lastfloor != fldGlobal.fldGb.AmFloor || lastfloor != fldAutoMap.gAmap_NowFloor)
                         {
-                            Loaderpatch.Postfix();
+                            ReconstructMap();
+                            return;
                         }
 
                         //based on original code, sets map floor and cam position to where the player is at all times
@@ -228,21 +237,21 @@ namespace Nocturne_Minimap
                         fldAutoMap.gAmap_OfsX = (int)fldGlobal.fldGb.playerX + (int)x;
                         fldAutoMap.gAmap_OfsZ = (int)fldGlobal.fldGb.playerZ + (int)z;
 
-
+                        
                         //preserve internal map seq mode if it were for some reason changed
                         int whatever = fldAutoMap.AutoMapSeq;
 
                         //force map update
 
-                        ignoreinput = true;
-                        audiostop = true;
-
+                        StopProcesses = true;
+                        
                         fldAutoMap.fldAutoMapDrawOneArea();
 
-                        ignoreinput = false;
-                        audiostop = false;
+                        StopProcesses = false;
 
                         fldAutoMap.AutoMapSeq = whatever;
+
+                        
 
                     }
                     else
@@ -262,14 +271,14 @@ namespace Nocturne_Minimap
 
                     //keep icons in correct positions
 
-                    List<string> found = new List<string>();
+                    HashSet<string> found = new HashSet<string>();
 
                     foreach (Il2CppSystem.Object x in originalMap.transform.Find("autom_icon"))
                     {
                         GameObject xgo = x.Cast<Transform>().gameObject;
 
                         string instanceid = xgo.GetInstanceID().ToString();
-
+                        
                         Transform find = clonemap.transform.Find("autom_icon/" + instanceid);
                         if (find != null)
                         {
@@ -302,10 +311,16 @@ namespace Nocturne_Minimap
                         Transform g = b.Cast<Transform>();
                         if (!found.Contains(g.name))
                         {
-                            GameObject.Destroy(g.gameObject);
+                            //Msg("destroyed " + g.name);
+                            GameObject.DestroyImmediate(g.gameObject);
                         }
                     }
+                    found.Clear();
                 }
+
+
+                //not sure if nessecary, probably not, but oh well
+                StopProcesses = false;
             }
         }
 
@@ -330,13 +345,9 @@ namespace Nocturne_Minimap
 
 
 
-        //dont run auto map clear, just hide objects
-        //might require custom garbage collection later, not sure
-
-        //this might be the source of lag spikes, but my VS diagnostics dont show a memory leak or anything...
 
         [HarmonyPatch(typeof(fldAutoMap), "fldAutoMapFree")]
-        public static class freepatch
+        public static class endpatch
         {
             public static void Prefix(ref bool __runOriginal)
             {
@@ -350,7 +361,7 @@ namespace Nocturne_Minimap
 
 
 
-        public static bool audiostop = false;
+        public static bool StopProcesses = false;
 
 
 
@@ -362,28 +373,33 @@ namespace Nocturne_Minimap
         {
             public static void Postfix()
             {
-                audiostop = true;
-
-                if (CanOpenMap())
-                {
-                    fldAutoMap.fldAutoMapSeqStart();
-
-                    CreateSetup();
-
-                    fldAutoMap.fldAutoMapSeqEnd();
-
-
-                    //dont cancel out input in this scenario
-                    fldGlobal.fldGb.NoInpAmCnt = 0;
-                    fldGlobal.fldGb.NoInpPlCnt = 0;
-
-                    lastfloor = fldGlobal.fldGb.AmFloor;
-
-                }
-
-                audiostop = false;
-
+                ReconstructMap();
             }
+        }
+
+
+
+        public static void ReconstructMap()
+        {
+            //Msg("reconstructed map");
+            StopProcesses = true;
+
+            if (CanOpenMap())
+            {
+                fldAutoMap.fldAutoMapSeqStart();
+
+                CreateSetup();
+
+                fldAutoMap.fldAutoMapSeqEnd();
+
+                //dont cancel out input in this scenario
+                fldGlobal.fldGb.NoInpAmCnt = 0;
+                fldGlobal.fldGb.NoInpPlCnt = 0;
+
+                lastfloor = fldGlobal.fldGb.AmFloor;
+            }
+
+            StopProcesses = false;
         }
 
 
@@ -391,11 +407,14 @@ namespace Nocturne_Minimap
         //stops the minimap opening sound from being played when Im the one who called the start of the sequence
         // + now stops some other methods in fldprocess to avoid ruining game processes
 
-        [HarmonyPatch]
-        public static class audioandproc
+        [HarmonyReversePatch]
+        public static class MuteProcesses
         {
             static IEnumerable<MethodBase> TargetMethods()
             {
+                yield return AccessTools.Method(typeof(dds3PadManager), "DDS3_PADCHECK_PRESS");
+                yield return AccessTools.Method(typeof(dds3PadManager), "DDS3_PADCHECK_TRIG");
+
                 yield return AccessTools.Method(typeof(sdfSound), "p2sdPlaySE");
 
                 yield return AccessTools.Method(typeof(fldProcess), "fldProcAmChk");
@@ -410,29 +429,10 @@ namespace Nocturne_Minimap
 
             public static void Prefix(ref bool __runOriginal)
             {
-                //if trying to play the open map sound and I know it was me who started the sequence, dont
-                __runOriginal = !audiostop;
+                __runOriginal = !StopProcesses;
             }
         }
 
-
-        //stops floor changes and other inputs from reaching custom draw refreshes
-
-        [HarmonyPatch]
-        public static class input
-        {
-            static IEnumerable<MethodBase> TargetMethods()
-            {
-                yield return AccessTools.Method(typeof(dds3PadManager), "DDS3_PADCHECK_PRESS");
-                yield return AccessTools.Method(typeof(dds3PadManager), "DDS3_PADCHECK_TRIG");
-
-            }
-
-            public static void Prefix(ref bool __runOriginal)
-            {
-                __runOriginal = !ignoreinput;
-            }
-        }
 
 
 
