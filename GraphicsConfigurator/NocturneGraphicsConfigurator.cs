@@ -5,6 +5,7 @@ using System.IO;
 using System.Collections;
 using System.Linq;
 using System.Collections.Generic;
+using System;
 
 //modding/unity stuff
 using MelonLoader;
@@ -19,7 +20,8 @@ using Il2CppXRD773Unity;
 using Il2Cpp;
 using Il2Cppkernel_H;
 
-[assembly: MelonInfo(typeof(Nocturne_Graphics_Configurator.NocturneGraphicsConfigurator), "Nocturne Graphics Configurator", "1.71", "vvdashdash")]
+
+[assembly: MelonInfo(typeof(Nocturne_Graphics_Configurator.NocturneGraphicsConfigurator), "Nocturne Graphics Configurator", "1.74", "vvdashdash")]
 [assembly: MelonGame(null, "smt3hd")]
 
 namespace Nocturne_Graphics_Configurator
@@ -92,55 +94,55 @@ namespace Nocturne_Graphics_Configurator
 
 
         //internal bools for those variables
-        public static bool speedhack = false;
-        public static bool Unlock = false;
-        public static bool UIOn = true;
-        public static int CurrentFramerate = 30;
+        private static bool speedhack = false;
+        private static bool Unlock = false;
+        private static bool UIOn = true;
+        private static int CurrentFramerate = 30;
         
 
         //global objects
-        public static GameObject ui;
-        public static GameObject uicamera;
-        public static PostProcessStackV2Manager ppsv2;
-        public static GameObject Trackers;
+        private static GameObject ui;
+        private static GameObject uicamera;
+        private static PostProcessStackV2Manager ppsv2;
+        private static GameObject Trackers;
 
 
 
         //stuff for aspect ratio support
-        public static bool useresolutionoverride = false;
-        public static float aspectratio;
-        public static Vector3 scaledifference;
-        public static Vector3 positionaloffsetlocal;
-        public static float buffer;
-        public static float bufferh;
+        private static bool useresolutionoverride = false;
+        private static float aspectratio;
+        private static Vector3 scaledifference;
+        private static Vector3 positionaloffsetlocal;
+        private static float buffer;
+        private static float bufferh;
 
 
-        public static Vector3 placehold = new Vector3(0, 9999, 0);
+        private static Vector3 placehold = new Vector3(0, 9999, 0);
 
 
         //for some reason some UI elements dont want to fully hide with just the layer technique, so I'm splitting this into two techniques
         //layer performance is better and code is cleaner though, so if you know why this is then do tell me
 
         //whitelist of UI objects to hide/show
-        public static List<string> uiremoves = new List<string>() { "talkUI", "fieldUI", "bparty(Clone)", "bmenuset(Clone)", "fldName", "bturnset(Clone)", "bannounce(Clone)" };
+        private static List<string> uiremoves = new List<string>() { "talkUI", "fieldUI", "bparty(Clone)", "bmenuset(Clone)", "fldName", "bturnset(Clone)", "bannounce(Clone)" };
         //whitelist of UI objects to hide and show but using layer 31 and layermask instead, to prevent conflicting with existing canvasgroups
-        public static List<string> uiremoveslayerhide = new List<string>() { "buttonguide01" };
+        private static List<string> uiremoveslayerhide = new List<string>() { "buttonguide01" };
 
 
 
         //allows debug key to be pressed, used to be used much more extensively but 0.6+ hot reload removed a lot of the need for it
-        public static bool MODDEBUGMODE = false;
+        private static bool MODDEBUGMODE = false;
 
         //debug value to show/hide interpolation target objects
-        public static bool targsvis = false;
+        private static bool targsvis = false;
 
 
         //this is to cover up things behind/besides menus and stuff for aspect ratio
-        public static GameObject customblackbox;
-        public static GameObject customblackboxL;
-        public static GameObject customblackboxR;
-        public static GameObject customblackboxU;
-        public static GameObject customblackboxD;
+        private static GameObject customblackbox;
+        private static GameObject customblackboxL;
+        private static GameObject customblackboxR;
+        private static GameObject customblackboxU;
+        private static GameObject customblackboxD;
 
 
         #region MELONLOADER INIT + REGULAR FUNCTIONS
@@ -208,11 +210,7 @@ namespace Nocturne_Graphics_Configurator
 
             Unlock = CustomFramerateOnLaunch.Value;
 
-            if (Unlock)
-            {
-                CurrentFramerate = Framerate.Value;
-                
-            }
+            ForceFramerateCap(!Unlock);
 
             currentFrameTime = Time.realtimeSinceStartup;
             MelonCoroutines.Start(WaitForNextFrame());
@@ -222,9 +220,7 @@ namespace Nocturne_Graphics_Configurator
         }
 
 
-        public static bool DidForce30 = false;
-        public static bool Force30 = false;
-        public static bool ForceBackUp = false;
+        private static bool DidForce30 = false;
 
         //regular lateupdate function, used for constant mod input and configuration, not game patching
         public override void OnLateUpdate()
@@ -234,66 +230,29 @@ namespace Nocturne_Graphics_Configurator
                 return;
             }
 
+            if (Input.GetKeyDown(FramerateToggleKey.Value))
+            {
+                ForceFramerateCap(Unlock);
+            }
+
+
             if (Application.targetFrameRate != CurrentFramerate)
             {
                 Application.targetFrameRate = CurrentFramerate;
             }
+            
 
-
-            if (Unlock)
+            if (Unlock && QualitySettings.vSyncCount != VSyncMode.Value)
             {
                 QualitySettings.vSyncCount = VSyncMode.Value;
             }
 
 
-            if (Input.GetKeyDown(FramerateToggleKey.Value) || Force30 || ForceBackUp)
-            {
-                Unlock = !Unlock;
-
-                if (Force30)
-                {
-                    Unlock = false;
-                }
-                if (ForceBackUp)
-                {
-                    Unlock = true;
-                }
-
-                //makes sure trackers are updated
-                InterpolationStage1(false);
-                InterpolationStage1(true);
-
-
-                currentFrameTime = Time.realtimeSinceStartup;
-
-                if (Unlock)
-                {
-                    CurrentFramerate = Framerate.Value;
-
-                    LoggerInstance.Msg("Framerate mod enabled (" + CurrentFramerate.ToString() + " FPS target).");
-
-                }
-                else
-                {
-                    CurrentFramerate = 9999;
-                    SteamScreen.SetFrameRate();
-
-                    LoggerInstance.Msg("Framerate mod disabled.");
-                }
-
-            }
-
-            ForceBackUp = false;
-            Force30 = false;
-
-
             if (Input.GetKeyDown(UIToggleKey.Value))
             {
-
                 UIOn = !UIOn;
 
                 LoggerInstance.Msg("UI set to " + UIOn.ToString());
-
             }
 
             if (Input.GetKeyDown(SpeedhackToggleKey.Value))
@@ -305,14 +264,15 @@ namespace Nocturne_Graphics_Configurator
 
                 if (speedhack)
                 {
-                    Time.fixedDeltaTime = 1f / (SpeedhackSpeed.Value * 30f);
+                    Time.timeScale = SpeedhackSpeed.Value;
                 }
                 else
                 {
-                    Time.fixedDeltaTime = 1f / 30f;
+                    Time.timeScale = 1f;
                 }
 
             }
+            Time.fixedDeltaTime = 1f / 30f;
 
 
             if (MODDEBUGMODE)
@@ -349,9 +309,36 @@ namespace Nocturne_Graphics_Configurator
 
         }
 
+        private static void ForceFramerateCap(bool value)
+        {
+            Unlock = !value;
+
+            //makes sure trackers are updated
+            InterpolationStage1(false);
+            InterpolationStage1(true);
+
+            currentFrameTime = Time.realtimeSinceStartup;
+
+            if (Unlock)
+            {
+                CurrentFramerate = Framerate.Value;
+
+                Msg("Framerate mod enabled (" + CurrentFramerate.ToString() + " FPS target).");
+
+            }
+            else
+            {
+                CurrentFramerate = 9999;
+                SteamScreen.SetFrameRate(); //sets vsync setting of the actual game settings
+
+                Msg("Framerate mod disabled.");
+            }
+        }
+
+
 
         //scans for and hides UI according to above lists
-        public static void updateui()
+        private static void updateui()
         {
 
             if (ui == null)
@@ -488,6 +475,8 @@ namespace Nocturne_Graphics_Configurator
                     GlobalData.kernelObject.enemyUI.transform.localPosition = Vector3.Scale(GlobalData.kernelObject.enemyUI.transform.localPosition, scaledifference);
                 }
 
+
+
                 //field name indicator
                 if (GlobalData.kernelObject.areaUI != null)
                 {
@@ -507,8 +496,30 @@ namespace Nocturne_Graphics_Configurator
                 }
 
 
-                //offset the menus to be center screen
+                //gouto pic
+                if (evtPicture.bGouto)
+                {
+                    GameObject aibo = GameObject.Find("aibo");
+                    if (aibo != null)
+                    {
+                        //-600,0,0  usually
+                        //this will be a little off height wise for 4:3 but I dont care enough to figure out the exact number here
+                        //its close enough, you would never know
+                        aibo.transform.localPosition += new Vector3(0, 190 * (1f - scaledifference.y), 0);
+                    }
+                }
 
+
+
+                //fmv scaling
+                if (mviManager.movie_obj != null)
+                {
+                    mviManager.movie_obj.transform.localScale = new Vector3(scaledifference.y, scaledifference.y, 1);
+                }
+
+
+
+                //offset the menus to be center screen
 
                 Vector3 posoffset = new Vector3(-(1920/2), 540, 0);
 
@@ -521,9 +532,11 @@ namespace Nocturne_Graphics_Configurator
                     title.transform.localPosition = posoffset;
                 }
 
-                if (GameObject.Find("RdLogoUI(Clone)") != null)
+
+                var rdclon = GameObject.Find("RdLogoUI(Clone)");
+                if (rdclon != null)
                 {
-                    GameObject.Find("RdLogoUI(Clone)").transform.localPosition = posoffset;
+                    rdclon.transform.localPosition = posoffset;
                 }
 
 
@@ -631,10 +644,11 @@ namespace Nocturne_Graphics_Configurator
                 if (fclUI.fclObj != null)
                 {
 
+                    var inst = fclUI.fclObj.transform.FindChild("institutionUI");
                     //options present in all of these
-                    if (fclUI.fclObj.transform.FindChild("institutionUI") != null)
+                    if (inst != null)
                     {
-                        fclUI.fclObj.transform.FindChild("institutionUI").transform.localPosition = submenuoffsetL;
+                        inst.localPosition = submenuoffsetL;
                     }
 
 
@@ -644,36 +658,41 @@ namespace Nocturne_Graphics_Configurator
                         //cathedral
                         case string a when a.Contains("combUI"):
 
-                            if (fclUI.fclObj.transform.FindChild("combgcolor") != null)
+                            var comc = fclUI.fclObj.transform.FindChild("combgcolor");
+                            if (comc != null)
                             {
                                 //-4 -4 0
-                                fclUI.fclObj.transform.FindChild("combgcolor").transform.localPosition = submenuoffsetL + new Vector3(-4, 4, 0);
-                                fclUI.fclObj.transform.FindChild("combgcolor").transform.localScale = Vector3.Scale(scaledifference, new Vector3(1.1f, 1f, 1));
+                                comc.localPosition = submenuoffsetL + new Vector3(-4, 4, 0);
+                                comc.localScale = Vector3.Scale(scaledifference, new Vector3(1.1f, 1f, 1));
                             }
 
-                            if (fclUI.fclObj.transform.FindChild("combmenu/combase") != null)
+                            var comb = fclUI.fclObj.transform.FindChild("combmenu/combase");
+                            if (comb != null)
                             {
                                 //-4 -262 0
-                                fclUI.fclObj.transform.FindChild("combmenu/combase").transform.localPosition = submenuoffsetL + new Vector3(-4, -262 * scaledifference.y, 0);
-                                fclUI.fclObj.transform.FindChild("combmenu/combase").transform.localScale = Vector3.Scale(scaledifference, new Vector3(1.1f, 1f, 1));
+                                comb.localPosition = submenuoffsetL + new Vector3(-4, -262 * scaledifference.y, 0);
+                                comb.localScale = Vector3.Scale(scaledifference, new Vector3(1.1f, 1f, 1));
                             }
 
-                            if (fclUI.fclObj.transform.FindChild("comtitle") != null)
+                            var comt = fclUI.fclObj.transform.FindChild("comtitle");
+                            if (comt != null)
                             {
                                 //-4 -38 0
-                                fclUI.fclObj.transform.FindChild("comtitle").transform.localPosition = submenuoffsetL + new Vector3(-4, -38 * scaledifference.y, 0);
+                                comt.localPosition = submenuoffsetL + new Vector3(-4, -38 * scaledifference.y, 0);
                             }
 
-                            if (fclUI.fclObj.transform.FindChild("combmenu/comname") != null)
+                            var b = fclUI.fclObj.transform.FindChild("combmenu/comname");
+                            if (b != null)
                             {
                                 //1126 -146 0
-                                fclUI.fclObj.transform.FindChild("combmenu/comname").transform.localPosition = new Vector3(1126 * scaledifference.x, -146 * scaledifference.y, 0);
+                                b.localPosition = new Vector3(1126 * scaledifference.x, -146 * scaledifference.y, 0);
                             }
 
+                            var comdn01 = fclUI.fclObj.transform.FindChild("combmenu/comdname01");
                             //154 -118 0
-                            if (fclUI.fclObj.transform.FindChild("combmenu/comdname01") != null)
+                            if (comdn01 != null)
                             {
-                                fclUI.fclObj.transform.FindChild("combmenu/comdname01").transform.localPosition = submenuoffsetL + new Vector3(154, -118 * scaledifference.y, 0);
+                                comdn01.localPosition = submenuoffsetL + new Vector3(154, -118 * scaledifference.y, 0);
                             }
 
                             break;
@@ -684,79 +703,84 @@ namespace Nocturne_Graphics_Configurator
                         case string a when a.Contains("recovUI"):
 
 
-                            if (fclUI.fclObj.transform.FindChild("rcvbgcolor") != null)
+                            var rcvBgColorTransform = fclUI.fclObj.transform.FindChild("rcvbgcolor");
+                            if (rcvBgColorTransform != null)
                             {
                                 //-4 -4 0
-                                fclUI.fclObj.transform.FindChild("rcvbgcolor").transform.localPosition = submenuoffsetL + new Vector3(-4, 4, 0);
-                                fclUI.fclObj.transform.FindChild("rcvbgcolor").transform.localScale = Vector3.Scale(scaledifference, new Vector3(1.1f, 1f, 1));
+                                rcvBgColorTransform.localPosition = submenuoffsetL + new Vector3(-4, 4, 0);
+                                rcvBgColorTransform.localScale = Vector3.Scale(scaledifference, new Vector3(1.1f, 1f, 1));
                             }
 
-
-                            //-4 -236 0
-                            if (fclUI.fclObj.transform.FindChild("rcvlist/rcvbase") != null)
+                            var rcvListBaseTransform = fclUI.fclObj.transform.FindChild("rcvlist/rcvbase");
+                            if (rcvListBaseTransform != null)
                             {
                                 //-4 -236 0
-                                fclUI.fclObj.transform.FindChild("rcvlist/rcvbase").transform.localPosition = submenuoffsetL + new Vector3(0, -236 * scaledifference.y, 0);
-                                fclUI.fclObj.transform.FindChild("rcvlist/rcvbase").transform.localScale = Vector3.Scale(scaledifference, new Vector3(1.1f, 1f, 1));
+                                rcvListBaseTransform.localPosition = submenuoffsetL + new Vector3(0, -236 * scaledifference.y, 0);
+                                rcvListBaseTransform.localScale = Vector3.Scale(scaledifference, new Vector3(1.1f, 1f, 1));
                             }
 
-
-                            if (fclUI.fclObj.transform.FindChild("rcvmoney") != null)
+                            var rcvMoneyTransform = fclUI.fclObj.transform.FindChild("rcvmoney");
+                            if (rcvMoneyTransform != null)
                             {
                                 //1924 -58 0
-                                fclUI.fclObj.transform.FindChild("rcvmoney").transform.localPosition = submenuoffsetR + new Vector3(0,-58*scaledifference.y,0);
+                                rcvMoneyTransform.localPosition = submenuoffsetR + new Vector3(0, -58 * scaledifference.y, 0);
                             }
 
-                            //1924 -134 0
-                            if (fclUI.fclObj.transform.FindChild("rcvfee") != null)
+                            var rcvFeeTransform = fclUI.fclObj.transform.FindChild("rcvfee");
+                            if (rcvFeeTransform != null)
                             {
-                                fclUI.fclObj.transform.FindChild("rcvfee").transform.localPosition = submenuoffsetR + new Vector3(0, -134 * scaledifference.y, 0);
+                                //1924 -134 0
+                                rcvFeeTransform.localPosition = submenuoffsetR + new Vector3(0, -134 * scaledifference.y, 0);
                             }
 
-
-                            if (fclUI.fclObj.transform.FindChild("rcvtitle") != null)
+                            var rcvTitleTransform = fclUI.fclObj.transform.FindChild("rcvtitle");
+                            if (rcvTitleTransform != null)
                             {
                                 //-4 -38 0
-                                fclUI.fclObj.transform.FindChild("rcvtitle").transform.localPosition = submenuoffsetL + new Vector3(-4, -38 * scaledifference.y, 0);
+                                rcvTitleTransform.localPosition = submenuoffsetL + new Vector3(-4, -38 * scaledifference.y, 0);
                             }
-
-
                             break;
+
 
                         //junk shop
                         case string a when a.Contains("shopUI"):
 
-                            if (fclUI.fclObj.transform.FindChild("shopmoney") != null)
+
+                            var shopMoneyTransform = fclUI.fclObj.transform.FindChild("shopmoney");
+                            if (shopMoneyTransform != null)
                             {
                                 //1924 -58 0
-                                fclUI.fclObj.transform.FindChild("shopmoney").transform.localPosition = submenuoffsetR + new Vector3(0, -58 * scaledifference.y, 0);
+                                shopMoneyTransform.localPosition = submenuoffsetR + new Vector3(0, -58 * scaledifference.y, 0);
                             }
 
-                            if (fclUI.fclObj.transform.FindChild("shoptitle") != null)
+                            var shopTitleTransform = fclUI.fclObj.transform.FindChild("shoptitle");
+                            if (shopTitleTransform != null)
                             {
                                 //-4 -38 0
-                                fclUI.fclObj.transform.FindChild("shoptitle").transform.localPosition = submenuoffsetL + new Vector3(-4 * scaledifference.x, -38 * scaledifference.y, 0);
+                                shopTitleTransform.localPosition = submenuoffsetL + new Vector3(-4 * scaledifference.x, -38 * scaledifference.y, 0);
                             }
 
-
-                            if (fclUI.fclObj.transform.FindChild("shopbgcolor") != null)
+                            var shopBgColorTransform = fclUI.fclObj.transform.FindChild("shopbgcolor");
+                            if (shopBgColorTransform != null)
                             {
                                 //-4 -4 0
-                                fclUI.fclObj.transform.FindChild("shopbgcolor").transform.localPosition = submenuoffsetL + new Vector3(-4, 4, 0);
-                                fclUI.fclObj.transform.FindChild("shopbgcolor").transform.localScale = Vector3.Scale(scaledifference, new Vector3(1.1f, 1f, 1));
+                                shopBgColorTransform.localPosition = submenuoffsetL + new Vector3(-4, 4, 0);
+                                shopBgColorTransform.localScale = Vector3.Scale(scaledifference, new Vector3(1.1f, 1f, 1));
                             }
 
-                            if (fclUI.fclObj.transform.FindChild("shopbase") != null)
+                            var shopBaseTransform = fclUI.fclObj.transform.FindChild("shopbase");
+                            if (shopBaseTransform != null)
                             {
                                 //-4 -236 0
-                                fclUI.fclObj.transform.FindChild("shopbase").transform.localPosition = submenuoffsetL + new Vector3(0, -236 * scaledifference.y, 0);
-                                fclUI.fclObj.transform.FindChild("shopbase").transform.localScale = Vector3.Scale(scaledifference, new Vector3(1.1f, 1f, 1));
+                                shopBaseTransform.localPosition = submenuoffsetL + new Vector3(0, -236 * scaledifference.y, 0);
+                                shopBaseTransform.localScale = Vector3.Scale(scaledifference, new Vector3(1.1f, 1f, 1));
                             }
 
-                            //1924 -134 0
-                            if (fclUI.fclObj.transform.FindChild("shopfee") != null)
+                            var shopFeeTransform = fclUI.fclObj.transform.FindChild("shopfee");
+                            if (shopFeeTransform != null)
                             {
-                                fclUI.fclObj.transform.FindChild("shopfee").transform.localPosition = submenuoffsetR + new Vector3(0, -134 * scaledifference.y, 0);
+                                //1924 -134 0
+                                shopFeeTransform.localPosition = submenuoffsetR + new Vector3(0, -134 * scaledifference.y, 0);
                             }
 
                             break;
@@ -765,24 +789,28 @@ namespace Nocturne_Graphics_Configurator
                         //gem shop or whatever the fuck its called
                         case string a when a.Contains("ragUI"):
 
-                            if (fclUI.fclObj.transform.FindChild("ragbgcolor") != null)
+
+                            var ragBgColorTransform = fclUI.fclObj.transform.FindChild("ragbgcolor");
+                            if (ragBgColorTransform != null)
                             {
                                 //-4 -4 0
-                                fclUI.fclObj.transform.FindChild("ragbgcolor").transform.localPosition = submenuoffsetL + new Vector3(-4, 4, 0);
-                                fclUI.fclObj.transform.FindChild("ragbgcolor").transform.localScale = Vector3.Scale(scaledifference, new Vector3(1.1f, 1f, 1));
+                                ragBgColorTransform.localPosition = submenuoffsetL + new Vector3(-4, 4, 0);
+                                ragBgColorTransform.localScale = Vector3.Scale(scaledifference, new Vector3(1.1f, 1f, 1));
                             }
 
-                            if (fclUI.fclObj.transform.FindChild("ragbase") != null)
+                            var ragBaseTransform = fclUI.fclObj.transform.FindChild("ragbase");
+                            if (ragBaseTransform != null)
                             {
                                 //-4 -136 0
-                                fclUI.fclObj.transform.FindChild("ragbase").transform.localPosition = submenuoffsetL + new Vector3(0, -136 * scaledifference.y, 0);
-                                fclUI.fclObj.transform.FindChild("ragbase").transform.localScale = Vector3.Scale(scaledifference, new Vector3(1.1f, 1f, 1));
+                                ragBaseTransform.localPosition = submenuoffsetL + new Vector3(0, -136 * scaledifference.y, 0);
+                                ragBaseTransform.localScale = Vector3.Scale(scaledifference, new Vector3(1.1f, 1f, 1));
                             }
 
-                            if (fclUI.fclObj.transform.FindChild("ragtitle") != null)
+                            var ragTitleTransform = fclUI.fclObj.transform.FindChild("ragtitle");
+                            if (ragTitleTransform != null)
                             {
                                 //-4 -38 0
-                                fclUI.fclObj.transform.FindChild("ragtitle").transform.localPosition = submenuoffsetL + new Vector3(-4 * scaledifference.x, -38 * scaledifference.y, 0);
+                                ragTitleTransform.localPosition = submenuoffsetL + new Vector3(-4 * scaledifference.x, -38 * scaledifference.y, 0);
                             }
 
                             break;
@@ -791,22 +819,25 @@ namespace Nocturne_Graphics_Configurator
                         //amala drum save terminal
                         case string a when a.Contains("terminalUI"):
 
-                            if (fclUI.fclObj.transform.FindChild("tmnlcurrent") != null)
+                            var tmnlCurrentTransform = fclUI.fclObj.transform.FindChild("tmnlcurrent");
+                            if (tmnlCurrentTransform != null)
                             {
                                 //1924 -38 0
-                                fclUI.fclObj.transform.FindChild("tmnlcurrent").transform.localPosition = submenuoffsetR + new Vector3(4, -38 * scaledifference.y, 0);
+                                tmnlCurrentTransform.localPosition = submenuoffsetR + new Vector3(4, -38 * scaledifference.y, 0);
                             }
 
-                            if (fclUI.fclObj.transform.FindChild("menu_tmnl") != null)
+                            var menuTmnlTransform = fclUI.fclObj.transform.FindChild("menu_tmnl");
+                            if (menuTmnlTransform != null)
                             {
                                 //0 -176.0001 -4
-                                fclUI.fclObj.transform.FindChild("menu_tmnl").transform.localPosition = submenuoffsetL + new Vector3(-4, -176f * scaledifference.y, 0);
+                                menuTmnlTransform.localPosition = submenuoffsetL + new Vector3(-4, -176f * scaledifference.y, 0);
                             }
 
-                            if (fclUI.fclObj.transform.FindChild("tmnltitle") != null)
+                            var tmnlTitleTransform = fclUI.fclObj.transform.FindChild("tmnltitle");
+                            if (tmnlTitleTransform != null)
                             {
                                 //-4 -38 0
-                                fclUI.fclObj.transform.FindChild("tmnltitle").transform.localPosition = submenuoffsetL + new Vector3(-4 * scaledifference.x, -38 * scaledifference.y, 0);
+                                tmnlTitleTransform.localPosition = submenuoffsetL + new Vector3(-4 * scaledifference.x, -38 * scaledifference.y, 0);
                             }
 
 
@@ -876,25 +907,40 @@ namespace Nocturne_Graphics_Configurator
 
                     pbGame.oPB_UI.transform.localPosition = posoffset;
 
-                    if (pbGame.oPB_UI.transform.FindChild("pzlstage") != null)
+                    var stg = pbGame.oPB_UI.transform.FindChild("pzlstage");
+                    if (stg != null)
                     {
                         //1494 -56 0
-                        pbGame.oPB_UI.transform.FindChild("pzlstage").transform.localPosition = submenuoffsetR + new Vector3(-426, -56 * scaledifference.y, 0f);
+                        stg.localPosition = submenuoffsetR + new Vector3(-426, -56 * scaledifference.y, 0f);
                     }
 
-                    if (pbGame.oPB_UI.transform.FindChild("pzlmenu") != null)
+                    var pzlm = pbGame.oPB_UI.transform.FindChild("pzlmenu");
+                    if (pzlm != null)
                     {
                         //90 -138 0
-                        pbGame.oPB_UI.transform.FindChild("pzlmenu").transform.localPosition = submenuoffsetL + new Vector3(90, -138 * scaledifference.y, 0f);
+                        pzlm.localPosition = submenuoffsetL + new Vector3(90, -138 * scaledifference.y, 0f);
                     }
 
-
-                    puzzlehelp = pbGame.oPB_UI.transform.FindChild("pzlhelp") != null && pbGame.oPB_UI.transform.FindChild("pzlhelp").gameObject.active;
+                    var pzlh = pbGame.oPB_UI.transform.FindChild("pzlhelp");
+                    puzzlehelp = pzlh != null && pzlh.gameObject.active;
 
                 }
 
 
                 bool FLATMAPWORLD = dds3MatterObjectBasic.GetFHD() != null && dds3MatterObjectBasic.GetFHD().orthographic;
+
+
+                //if a movie is visible or in flat map, then dont letterbox it
+                bool moviev = (mviManager.movie_obj != null && mviManager.movie_obj.active) || FLATMAPWORLD;
+                if (customblackboxU != null)
+                {
+                    customblackboxU.active = !moviev;
+                }
+                if (customblackboxD != null)
+                {
+                    customblackboxD.active = !moviev;
+                }
+
 
                 if (customblackbox != null)
                 {
@@ -938,7 +984,7 @@ namespace Nocturne_Graphics_Configurator
 
 
         //debug function to print information about tracked characters
-        public static void unitobjectdetails()
+        private static void unitobjectdetails()
         {
             Msg("these are the current unitobject setups");
             foreach (KeyValuePair<dds3Basic_t, GameObject> epic in interpolationobjlist)
@@ -965,9 +1011,9 @@ namespace Nocturne_Graphics_Configurator
         //kills the default renderforcer responsible for enforcing 30fps
 
         [HarmonyPatch(typeof(ForceRenderRate), "Start")]
-        public static class RenderForcerPatch
+        private static class RenderForcerPatch
         {
-            public static void Prefix(ref ForceRenderRate __instance, ref bool __runOriginal)
+            private static void Prefix(ref ForceRenderRate __instance, ref bool __runOriginal)
             {
                 __runOriginal = false;
                 GameObject.Destroy(__instance.gameObject);
@@ -975,7 +1021,7 @@ namespace Nocturne_Graphics_Configurator
         }
 
 
-        float currentFrameTime;
+        static float currentFrameTime;
         IEnumerator WaitForNextFrame()
         {
             while (true)
@@ -1005,15 +1051,15 @@ namespace Nocturne_Graphics_Configurator
 
 
 
-        public static dds3DefaultMain kernel;
+        private static dds3DefaultMain kernel;
 
         //these are various bools to control the interpolation and other visual patches being active or not
 
-        public static bool ForceInterpolationOff = false;
-        public static bool ForceExtraLoopCall = false;
-        public static bool gamelogicrun = false;
-        public static bool boolforafterdoneloop = false;
-        public static bool boolforlateframe = false;
+        private static bool ForceInterpolationOff = false;
+        private static bool ForceExtraLoopCall = false;
+        private static bool gamelogicrun = false;
+        private static bool boolforafterdoneloop = false;
+        private static bool boolforlateframe = false;
 
 
         /// <summary>
@@ -1132,7 +1178,7 @@ namespace Nocturne_Graphics_Configurator
                 }
 
 
-                //I am aware this is an ugly solution, but its the best I could do
+                //I am aware this is an ugly solution, but its the best I could do while keeping it accurate.
                 if (ForceExtraLoopCall)
                 {
                     if (MODDEBUGMODE)
@@ -1142,8 +1188,12 @@ namespace Nocturne_Graphics_Configurator
 
                     dds3KernelMain.m_dds3KernelMainLoop();
 
-                    //..to compensate for the fact that I just called a frame ahead, again yes I know this is the uglest fucking thing ever
-                    System.Threading.Thread.Sleep((int) (1000f / 30f));
+
+                    //this is ugly but is intended to keep accuracy by countering the fact that I sometimes call the game loop twice in one 33ms frame.
+                    //disabling it would mean speedrunners for example would get a slight advantage, one that would add up over the course of the game, into a few seconds potentially.
+                    //I dont think this is actually percieveable in game as a framerate drop. You will see the counter drop, but I dont think you actually feel or see it.
+
+                    System.Threading.Thread.Sleep((int)(1000f / 30f));
                 }
 
 
@@ -1168,7 +1218,7 @@ namespace Nocturne_Graphics_Configurator
 
 
         //This returns true when a fixedupdate frame has just ran, not too extensively used anymore, originally was more crucial
-        public static bool Determine30fps()
+        private static bool Determine30fps()
         {
             return (boolforafterdoneloop || speedhack || !Unlock);
         }
@@ -1176,21 +1226,21 @@ namespace Nocturne_Graphics_Configurator
 
         //Same as above, but set forward one frame
         //mainly use this for lateupdate patches and/or patches that affect other objects
-        public static bool DetermineLate30fps()
+        private static bool DetermineLate30fps()
         {
             return (boolforlateframe || speedhack || !Unlock);
         }
 
 
         //call this when you want the game to force interpolation off for a frame and warp objects to where they should be
-        public static void Catchup()
+        private static void Catchup()
         {
             ForceInterpolationOff = true;
         }
 
 
         //call this if you want the game to call the game logic an extra time to 
-        public static void CallAhead()
+        private static void CallAhead()
         {
             ForceExtraLoopCall = true;
         }
@@ -1200,7 +1250,7 @@ namespace Nocturne_Graphics_Configurator
         //these are methods that create, destroy, set, get, and interpolate the objects that're given to them
 
         //this sets object positions and stores intended positions, or just sets object positions to intended
-        public static void InterpolationStage1(bool SetToIntended = true)
+        private static void InterpolationStage1(bool SetToIntended = true)
         {
 
             //put everything back before the real loop so that any transformation ive done doesnt affect the game when it reads transforms
@@ -1246,16 +1296,16 @@ namespace Nocturne_Graphics_Configurator
             }
         }
 
+        
+
         //this interpolates the objects in the list and sets lerpprogress
-        public static void InterpolationStage2()
+        private static void InterpolationStage2()
         {
 
-            /*float delcomp = 30f / (1f / RealDeltaTime);
+            float delcomp = 30f / (1f / RealDeltaTime);
             LerpProgress = Mathf.Clamp(LerpProgress + delcomp, 0, 1);
-            Msg(LerpProgress);*/
 
-            //should be smoother even though it isnt correspondant to deltatime, because it attempts to spread the progress evenly
-            LerpProgress = Mathf.Clamp(LerpProgress + Mathf.Clamp(1f / Mathf.Ceil((1f / RealDeltaTime) / 30f), 0, 0.5f), 0, 1);
+
 
             //interpolate unit objects
             if (interpolationobjlist != null)
@@ -1288,7 +1338,13 @@ namespace Nocturne_Graphics_Configurator
 
                         if (fldCamera.fldCameraObj != null && ch.gameObject == fldCamera.fldCameraObj && fldCamera.fldCamNowEveCamera() == null && fldPlayer.fldPlayerObj != null)
                         {
+                            //Msg("Fieldcam");
                             Vector3 TargetCenterPos = new Vector3(fldPlayer.fldPlayerObj.transform.position.x, fldCamera.fldCameraObj.transform.position.y, fldPlayer.fldPlayerObj.transform.position.z);
+
+                            ch.transform.position = Vector3.Slerp((ch.transform.position - TargetCenterPos), (dest.transform.position - TargetCenterPos), LerpProgress) + TargetCenterPos;
+
+                            ch.transform.rotation = Quaternion.Slerp(ch.transform.rotation, dest.rotation, LerpProgress);
+
 
                             //Msg(TargetCenterPos.y);
 
@@ -1306,9 +1362,6 @@ namespace Nocturne_Graphics_Configurator
                                 TargetCenterPos = fldPlayer.fldPlayerObj.transform.position + new Vector3(0, fldCamera.fldCameraObj.transform.position.y, 0);
                             }*/
 
-                            ch.transform.position = Vector3.Slerp((ch.transform.position - TargetCenterPos), (dest.transform.position - TargetCenterPos), LerpProgress) + TargetCenterPos;
-
-                            ch.transform.rotation = Quaternion.Slerp(ch.transform.rotation, dest.rotation, LerpProgress);
                         }
 
                         else
@@ -1324,7 +1377,7 @@ namespace Nocturne_Graphics_Configurator
         }
 
         //this removes null gameobject trackers
-        public static void ClearOutdatedTrackers()
+        private static void ClearOutdatedTrackers()
         {
             //clear any outdated interpolation trackers because the delete/destroy calls are either unreliable or not used
 
@@ -1369,8 +1422,9 @@ namespace Nocturne_Graphics_Configurator
             interpolationobjlist = newl;
         }
 
+
         //this adds a tracker to an object
-        public static void BasicTypeTrackAdd(dds3Basic_t targ, bool bigvis = false, bool debugshape = true)
+        private static void BasicTypeTrackAdd(dds3Basic_t targ, bool bigvis = false, bool debugshape = true)
         {
 
             GameObject empty = null;
@@ -1411,9 +1465,9 @@ namespace Nocturne_Graphics_Configurator
 
         //makes sure the game loop is only ran on fixedupdate (if unlocked)
         [HarmonyPatch(typeof(dds3KernelMain), "m_dds3KernelMainLoop")]
-        public static class mainloop
+        private static class mainloop
         {
-            public static void Prefix(ref bool __runOriginal)
+            private static void Prefix(ref bool __runOriginal)
             {
                 __runOriginal = gamelogicrun || !Unlock;
             }
@@ -1422,18 +1476,18 @@ namespace Nocturne_Graphics_Configurator
 
         //this is for effects and particles, so their call site can be in fixedupdate, trust me its more performant
 
-        public static HashSet<GraphicManager.CommonObject> lateupdatecommons = new HashSet<GraphicManager.CommonObject>();
+        private static HashSet<GraphicManager.CommonObject> lateupdatecommons = new HashSet<GraphicManager.CommonObject>();
         
         [HarmonyPatch]
-        public static class ParticleDeferLateUpdate
+        private static class ParticleDeferLateUpdate
         {
-            public static IEnumerable<MethodBase> TargetMethods()
+            private static IEnumerable<MethodBase> TargetMethods()
             {
                 //fixes particles flickering
                 yield return typeof(GraphicManager.CommonObject).GetMethod("LateUpdate");
             }
 
-            public static void Prefix(ref bool __runOriginal, ref GraphicManager.CommonObject __instance)
+            private static void Prefix(ref bool __runOriginal, ref GraphicManager.CommonObject __instance)
             {
                 if (!Application.isFocused)
                 {
@@ -1452,27 +1506,27 @@ namespace Nocturne_Graphics_Configurator
 
 
         //List of objects to track
-        public static Dictionary<dds3Basic_t, GameObject> interpolationobjlist = new Dictionary<dds3Basic_t, GameObject>();
+        private static Dictionary<dds3Basic_t, GameObject> interpolationobjlist = new Dictionary<dds3Basic_t, GameObject>();
 
         //did this because reading deltatime from a fixedupdate call very unhelpfully just gives you fixeddeltatime
-        public static float RealDeltaTime = 0.0f;
+        private static float RealDeltaTime = 0.0f;
         
         //lerp progress for object/value interpolation
-        public static float LerpProgress = 0.0f;
+        private static float LerpProgress = 0.0f;
 
 
-        public static GameObject cam = null;
-        //public static GameObject campcam = null;
+        private static GameObject cam = null;
+        //private static GameObject campcam = null;
 
         //for camera cuts, used by the fixedupdate
-        public static string lastcamevename = "";
+        private static string lastcamevename = "";
 
 
         //Patches the UPDATE loop of the game, so real framerate, not internal 30
         [HarmonyPatch(typeof(dds3DefaultMain), "Update")]
-        public static class MainLoopPatch
+        private static class MainLoopPatch
         {
-            public static void Postfix(ref dds3DefaultMain __instance)
+            private static void Postfix(ref dds3DefaultMain __instance)
             {
                 //I set this for debugging/hot reload sometimes
                 //MODDEBUGMODE = true;
@@ -1549,15 +1603,15 @@ namespace Nocturne_Graphics_Configurator
 
                 dds3ProcessID_t pbdrawbase = dds3KernelCore.dds3SearchProcessName("pb-draw-mapbase");
 
-                if ((pipeproc != null || pbdrawbase != null) && Unlock)
+                if ((pipeproc != null || pbdrawbase != null) && Unlock && !DidForce30)
                 {
                     DidForce30 = true;
-                    Force30 = true;
+                    ForceFramerateCap(true);
                 }
                 if ((pipeproc == null && pbdrawbase == null) && !Unlock && DidForce30)
                 {
                     DidForce30 = false;
-                    ForceBackUp = true;
+                    ForceFramerateCap(false);
                 }
 
                 //Msg(fldPlayer.fldPlayerObjM == null);
@@ -1582,9 +1636,9 @@ namespace Nocturne_Graphics_Configurator
         //Patch to list crucial/character objects for above interpolation
 
         [HarmonyPatch(typeof(dds3UnitObjectBasic), "dds3AddUnitObjectBasic")]
-        public static class InstanceStorageRegular
+        private static class InstanceStorageRegular
         {
-            public static void Postfix(ref dds3Basic_t __result)
+            private static void Postfix(ref dds3Basic_t __result)
             {
                 BasicTypeTrackAdd(__result);
             }
@@ -1601,13 +1655,13 @@ namespace Nocturne_Graphics_Configurator
         //pbStartGame causes some kind of arbitrary failure and is only called one time, while patching pbInitGame is apparently too early for puzzle objects other than the character
         //..so Im using initgame to set a bool for one frame, which then grabs the objects late into the main loop
 
-        public static bool PatchPuzzleBoy = false;
+        private static bool PatchPuzzleBoy = false;
 
         //[HarmonyPatch(typeof(pbGame), "pbStartGame")]
         [HarmonyPatch(typeof(pbGame), "pbInitGame")]
-        public static class InstangeStoragePuzzleBoy
+        private static class InstangeStoragePuzzleBoy
         {
-            public static void Postfix()
+            private static void Postfix()
             {
                 Catchup();
                 CallAhead();
@@ -1621,9 +1675,9 @@ namespace Nocturne_Graphics_Configurator
 
         /*//interpolates blocks
         [HarmonyPatch(typeof(pbDraw), "drawBlock")]
-        public static class InstangeStoragePuzzleBoy2
+        private static class InstangeStoragePuzzleBoy2
         {
-            public static void Prefix()
+            private static void Prefix()
             {
             }
         }*/
@@ -1635,9 +1689,9 @@ namespace Nocturne_Graphics_Configurator
         //it patches doors and maybe other stuff I dont know
 
         [HarmonyPatch(typeof(fldTitle), "fldTitleMiniStart2")]
-        public static class GimmickPatch
+        private static class GimmickPatch
         {
-            public static void Postfix()
+            private static void Postfix()
             {
                 if (fldFileResolver.FildMapObj != null && fldFileResolver.FildMapObj.GetComponent<GimmickObj>() != null)
                 {
@@ -1660,9 +1714,9 @@ namespace Nocturne_Graphics_Configurator
 
 
         [HarmonyPatch]
-        public static class OutOfPlaceFix
+        private static class OutOfPlaceFix
         {
-            public static IEnumerable<MethodBase> TargetMethods()
+            private static IEnumerable<MethodBase> TargetMethods()
             {
                 //prevent opening/closing map jitter
                 yield return AccessTools.Method(typeof(fldAutoMap), "fldAutoMapSeqEnd");
@@ -1718,7 +1772,7 @@ namespace Nocturne_Graphics_Configurator
 
             }
 
-            public static void Postfix()
+            private static void Postfix()
             {
                 CallAhead();
                 Catchup();
@@ -1730,9 +1784,9 @@ namespace Nocturne_Graphics_Configurator
         //this fixes methods that teleport but dont need as drastic a solution as calling the entire loop ahead.
 
         [HarmonyPatch]
-        public static class TeleportationPatch
+        private static class TeleportationPatch
         {
-            public static IEnumerable<MethodBase> TargetMethods()
+            private static IEnumerable<MethodBase> TargetMethods()
             {
 
                 //for zoom-ins on doors/exits
@@ -1759,7 +1813,7 @@ namespace Nocturne_Graphics_Configurator
                 }*/
             }
 
-            public static void Postfix()
+            private static void Postfix()
             {
                 Catchup();
             }
@@ -1775,9 +1829,9 @@ namespace Nocturne_Graphics_Configurator
 
         //mouse speed patch to counteract original deltatime calculation
         [HarmonyPatch(typeof(SteamMouse), "Update")]
-        public static class MousePatch
+        private static class MousePatch
         {
-            public static void Postfix(ref SteamMouse __instance)
+            private static void Postfix(ref SteamMouse __instance)
             {
                 if (Unlock)
                 {
@@ -1796,9 +1850,9 @@ namespace Nocturne_Graphics_Configurator
 
         //patches methods that need to be in tandem with the regular game logic at 30fps
         [HarmonyPatch]
-        public static class LockTo30fps
+        private static class LockTo30fps
         {
-            public static IEnumerable<MethodBase> TargetMethods()
+            private static IEnumerable<MethodBase> TargetMethods()
             {
                 //philosophy is to patch as little as possible in methods like these
                 //I did try programatically patching every single update/lateupdate method and it caused a ton of errors..
@@ -1819,7 +1873,7 @@ namespace Nocturne_Graphics_Configurator
 
             }
 
-            public static void Prefix(ref bool __runOriginal)
+            private static void Prefix(ref bool __runOriginal)
             {
                 __runOriginal = Determine30fps();
 
@@ -1829,9 +1883,9 @@ namespace Nocturne_Graphics_Configurator
 
         //this patches a variety of methods that need to be locked to 30fps but slightly later than game logic loop, for lateupdates and such
         [HarmonyPatch]
-        public static class LockToLate30FPS
+        private static class LockToLate30FPS
         {
-            public static IEnumerable<MethodBase> TargetMethods()
+            private static IEnumerable<MethodBase> TargetMethods()
             {
                 //fixes demon model flickering
                 yield return AccessTools.Method(typeof(ModelHD), "CallLateUpdate");
@@ -1848,7 +1902,7 @@ namespace Nocturne_Graphics_Configurator
                 yield return AccessTools.Method(typeof(UiHD), "LateUpdate");
             }
 
-            public static void Prefix(ref bool __runOriginal)
+            private static void Prefix(ref bool __runOriginal)
             {
                 __runOriginal = DetermineLate30fps();
             }
@@ -1857,9 +1911,9 @@ namespace Nocturne_Graphics_Configurator
 
         //patch to ensure battle demons and other animations that rely on this (like status view demons) have unlocked animation framerates
         [HarmonyPatch(typeof(FrameAnime), "LateUpdate")]
-        public static class FrameAnimePatch
+        private static class FrameAnimePatch
         {
-            public static void Postfix(ref FrameAnime __instance, ref bool __runOriginal)
+            private static void Postfix(ref FrameAnime __instance, ref bool __runOriginal)
             {
                 if (Unlock)
                 {
@@ -1875,13 +1929,13 @@ namespace Nocturne_Graphics_Configurator
 
         //screen fade in/out patch
 
-        public static Color fade1; //destination
-        public static Color fade2; //last frame
+        private static Color fade1; //destination
+        private static Color fade2; //last frame
 
         [HarmonyPatch(typeof(GfxManager), "LateUpdate")]
-        public static class fadeinout
+        private static class fadeinout
         {
-            public static void Postfix(ref GfxManager __instance)
+            private static void Postfix(ref GfxManager __instance)
             {
                 //__instance.tree_obj.transform.GetChild(0).GetComponent<UnityEngine.UI.Image>().color = UnityEngine.Color.clear;
                 if (__instance.tree_obj != null && __instance.tree_obj.transform.childCount != 0)
@@ -1953,15 +2007,6 @@ namespace Nocturne_Graphics_Configurator
                             float sclh = (1f - Mathf.Max(1f / ((1920f / 1080f) / (ResolutionOverrideX.Value / (float)ResolutionOverrideY.Value)), 0))/2f;
 
 
-                            //ResolutionOverrideX.Value = 2560*2;
-                            //ResolutionOverrideY.Value = 1080*2;
-
-                            //ResolutionOverrideX.Value = 1920 * 2;
-                            //ResolutionOverrideY.Value = 1080 * 2;
-
-                            //ResolutionOverrideX.Value = 640;
-                            //ResolutionOverrideY.Value = 480;
-
 
                             //fullscreen box
                             customblackbox.transform.localPosition = new Vector3(-1920 / 2f, 1080 / 2f, 0) + new Vector3(buffer, -bufferh, 0);
@@ -1992,14 +2037,14 @@ namespace Nocturne_Graphics_Configurator
         //scales talkUI since it isnt static and isnt super easy to access from lateupdate
 
         [HarmonyPatch(typeof(talkUI), "Display")]
-        public static class talkUIScale
+        private static class talkUIScale
         {
-            public static void Postfix(ref talkUI __instance)
+            private static void Postfix(ref talkUI __instance)
             {
                 if (useresolutionoverride)
                 {
 
-                    if (customblackbox.active)
+                    if (customblackbox.active && customblackboxU.active)
                     {
                         __instance.transform.localPosition = new Vector3(0, (-732 * scaledifference.y) - bufferh / 2f, 0);
                     }
@@ -2026,8 +2071,15 @@ namespace Nocturne_Graphics_Configurator
 
 
                     else if (__instance.name.Contains("name"))
-                    { 
-                        __instance.transform.localPosition = new Vector3(183 - buffer, -732 * scaledifference.y, 0);
+                    {
+                        //183 -804 0
+
+                        __instance.transform.localPosition = new Vector3(183 - buffer, (-732 * scaledifference.y)-72, 0);
+
+                        if (!Localize.IsEFIGS())
+                        {
+                            __instance.transform.localPosition += new Vector3(183*2,0,0);
+                        }
                     }
                 }
             }
@@ -2035,9 +2087,9 @@ namespace Nocturne_Graphics_Configurator
 
 
         [HarmonyPatch(typeof(talkChoice), "Update")]
-        public static class talkChoiceScale
+        private static class talkChoiceScale
         {
-            public static void Postfix(ref talkChoice __instance)
+            private static void Postfix(ref talkChoice __instance)
             {
                 if (useresolutionoverride && DetermineLate30fps())
                 {
@@ -2045,15 +2097,23 @@ namespace Nocturne_Graphics_Configurator
                     //(0.0, 322.0)
                     //[19:11:59.922] (1920.0, -758.0, 0.0)
 
+
                     if (customblackbox.active)
                     {
-                        __instance.transform.localPosition = new Vector3((1920f - buffer) + __instance.pos.x, -((436- bufferh) + __instance.pos.y), 0);
+                        __instance.transform.localPosition = new Vector3((1920f - buffer) + __instance.pos.x, -((436 - bufferh) + __instance.pos.y), 0);
                     }
                     else
                     {
                         __instance.transform.localPosition = new Vector3((1920f * scaledifference.x) + __instance.pos.x, -(436 + __instance.pos.y) * scaledifference.y, 0);
                     }
 
+                    //chinese is 6
+                    //and I believe japanese is 1.
+
+                    if (!Localize.IsEFIGS())
+                    {
+                        __instance.transform.localPosition += new Vector3(-2826 + 906, 0, 0);
+                    }
                 }
             }
         }
@@ -2063,16 +2123,20 @@ namespace Nocturne_Graphics_Configurator
         //ResizeScaling
 
         [HarmonyPatch(typeof(evtPicture), "ResizeScaling")]
-        public static class EvtPictureScale
+        private static class EvtPictureScale
         {
-            public static void Postfix()
+            private static void Postfix()
             {
-                if (useresolutionoverride && evtPicture.pictures != null)
+
+                if (useresolutionoverride)
                 {
-                    evtPicture.pictures.GetComponent<CanvasScaler>().uiScaleMode = CanvasScaler.ScaleMode.ConstantPixelSize;
-                    evtPicture.pictures.GetComponent<CanvasScaler>().screenMatchMode = CanvasScaler.ScreenMatchMode.MatchWidthOrHeight;
-                    evtPicture.pictures.GetComponent<CanvasScaler>().matchWidthOrHeight = 1;
-                    evtPicture.pictures.GetComponent<CanvasScaler>().scaleFactor = ResolutionOverrideY.Value / 1080f;
+                    if (evtPicture.pictures != null)
+                    {
+                        evtPicture.pictures.GetComponent<CanvasScaler>().uiScaleMode = CanvasScaler.ScaleMode.ConstantPixelSize;
+                        evtPicture.pictures.GetComponent<CanvasScaler>().screenMatchMode = CanvasScaler.ScreenMatchMode.MatchWidthOrHeight;
+                        evtPicture.pictures.GetComponent<CanvasScaler>().matchWidthOrHeight = 1;
+                        evtPicture.pictures.GetComponent<CanvasScaler>().scaleFactor = ResolutionOverrideY.Value / 1080f;
+                    }
                 }
             }
         }
@@ -2081,9 +2145,9 @@ namespace Nocturne_Graphics_Configurator
 
         //keeps track of post processing object for easy bloom enable/disable
         [HarmonyPatch(typeof(PostProcessStackV2Manager), "Start")]
-        public static class postprocesstrack
+        private static class postprocesstrack
         {
-            public static void Postfix(ref PostProcessStackV2Manager __instance)
+            private static void Postfix(ref PostProcessStackV2Manager __instance)
             {
                 ppsv2 = __instance;
             }
@@ -2095,14 +2159,14 @@ namespace Nocturne_Graphics_Configurator
         /// These are the patches for resolution override and shadow override.
         /// </summary>
 
-        public static int fix720p = 5;
+        private static int fix720p = 5;
 
         //enforces rendering resolution
         //not sure where aspect ratio enforcing code is
         [HarmonyPatch(typeof(dds3ConfigGraphicsSteam), "GetRenderingScale")]
-        public static class resolutionset1
+        private static class resolutionset1
         {
-            public static void Postfix(ref int w, ref int h)
+            private static void Postfix(ref int w, ref int h)
             {
                 if (useresolutionoverride)
                 {
@@ -2126,9 +2190,9 @@ namespace Nocturne_Graphics_Configurator
 
         //I dont really get what this is for, it just seems like it renders the regular game texture onto this to once again scale it, for some reason
         [HarmonyPatch(typeof(dds3DefaultMain), "CreateRenderScaleTexture")]
-        public static class resolutionset2
+        private static class resolutionset2
         {
-            public static void Prefix(ref int w, ref int h)
+            private static void Prefix(ref int w, ref int h)
             {
                 //dont do anything if user has set it to 0,0
                 if (useresolutionoverride)
@@ -2144,9 +2208,9 @@ namespace Nocturne_Graphics_Configurator
         //status menu demon view resolution
         //the status texture is infact just loaded right here and never stored to a variable, at least not one I can find easily
         [HarmonyPatch(typeof(cmpStatus), "cmpSetupObjUI")]
-        public static class resolutionset3
+        private static class resolutionset3
         {
-            public static void Postfix()
+            private static void Postfix()
             {
 
                 if (useresolutionoverride)
@@ -2173,9 +2237,9 @@ namespace Nocturne_Graphics_Configurator
         //patches shadow quality
         //default size is 512x512
         [HarmonyPatch(typeof(dds3DefaultMain), "GetShadowMapTex")]
-        public static class shadowset
+        private static class shadowset
         {
-            public static void Postfix(ref RenderTexture __result)
+            private static void Postfix(ref RenderTexture __result)
             {
 
                 int w = ShadowOverrideX.Value;
@@ -2201,15 +2265,15 @@ namespace Nocturne_Graphics_Configurator
 
         //This patches multiple render textures, and anything else that needs fixing within the screen rendering loop
 
-        public static bool refreshblit = true;
-        public static bool nowmodetemp = false;
+        private static bool refreshblit = true;
+        private static bool nowmodetemp = false;
 
-        public static float distortionblurspeedtemp = 0f;
+        private static float distortionblurspeedtemp = 0f;
 
         [HarmonyPatch(typeof(PostBlur), "OnRenderImage")]
-        public static class renderfix1
+        private static class renderfix1
         {
-            public static void Prefix(ref PostBlur __instance)
+            private static void Prefix(ref PostBlur __instance)
             {
                 if (DetermineLate30fps())
                 {
@@ -2232,7 +2296,6 @@ namespace Nocturne_Graphics_Configurator
                 {
                     __instance.refresh_Blit = refreshblit;
                 }
-
 
                 //override accumtexture res and stuff
                 if (useresolutionoverride)
@@ -2261,10 +2324,23 @@ namespace Nocturne_Graphics_Configurator
 
             //never confuse the game about the screen size outside of rendering code, because it breaks placement and stuff
             //1080p is the default value of this, even at other resolutions I believe, I dont know why this is an actual property
-            public static void Postfix()
+            private static void Postfix()
             {
                 if (useresolutionoverride)
                 {
+                    var b = GlobalData.kernelObject.MainCamera.GetComponent<PostBlur>();
+
+                    int w = ResolutionOverrideX.Value;
+                    int h = ResolutionOverrideY.Value;
+
+                    if (b != null && b.accumTexture != null && (b.accumTexture.width != w || b.accumTexture.height != h))
+                    {
+                        b.accumTexture.Release();
+                        b.accumTexture.width = w;
+                        b.accumTexture.height = h;
+                        b.accumTexture.Create();
+                    }
+
                     GlobalData.screen_wid = 1920;
                     GlobalData.screen_hei = 1080;
                 }
@@ -2272,7 +2348,7 @@ namespace Nocturne_Graphics_Configurator
         }
 
 
-        public static void ForceRefreshGraphics()
+        private static void ForceRefreshGraphics()
         {
             dds3ConfigGraphicsSteam.ChgConfigGraphicsAll();
 
@@ -2289,9 +2365,9 @@ namespace Nocturne_Graphics_Configurator
         //patches UI elements as well as general screen elements to fit any aspect ratio given
 
         [HarmonyPatch(typeof(SteamCameraControl), "Update")]
-        public static class elementsRatioPatch
+        private static class elementsRatioPatch
         {
-            public static void Prefix(ref SteamCameraControl __instance)
+            private static void Prefix(ref SteamCameraControl __instance)
             {
                 if (useresolutionoverride)
                 {
@@ -2299,7 +2375,7 @@ namespace Nocturne_Graphics_Configurator
                     GlobalData.screen_hei = ResolutionOverrideY.Value;
                 }
             }
-            public static void Postfix(ref SteamCameraControl __instance)
+            private static void Postfix(ref SteamCameraControl __instance)
             {
                 if (useresolutionoverride)
                 {
@@ -2312,9 +2388,9 @@ namespace Nocturne_Graphics_Configurator
 
 
         [HarmonyPatch(typeof(UICameraResize), "Update")]
-        public static class elementsRatioPatch2
+        private static class elementsRatioPatch2
         {
-            public static void Prefix(ref UICameraResize __instance)
+            private static void Prefix(ref UICameraResize __instance)
             {
                 if (useresolutionoverride)
                 {
@@ -2322,7 +2398,7 @@ namespace Nocturne_Graphics_Configurator
                     GlobalData.screen_hei = ResolutionOverrideY.Value;
                 }
             }
-            public static void Postfix(ref UICameraResize __instance)
+            private static void Postfix(ref UICameraResize __instance)
             {
                 if (useresolutionoverride)
                 {
@@ -2345,19 +2421,19 @@ namespace Nocturne_Graphics_Configurator
         //two little patches that help the above patch, not sure if it needed to be this complicated but it works so..
 
         [HarmonyPatch(typeof(dds3DefaultMain), "FieldFilterOn")]
-        public static class FieldFilter1
+        private static class FieldFilter1
         {
-            public static void Prefix()
+            private static void Prefix()
             {
                 refreshblit = true;
             }
         }
 
         [HarmonyPatch(typeof(dds3DefaultMain), "FieldFilterOff")]
-        public static class FieldFilter2
+        private static class FieldFilter2
         {
             
-            public static void Prefix()
+            private static void Prefix()
             {
                 refreshblit = false;
             }
