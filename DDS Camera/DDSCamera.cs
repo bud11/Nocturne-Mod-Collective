@@ -19,16 +19,17 @@ namespace DDSFixedCamera
     public class dds : MelonMod
     {
 
-        //this mod is the most hacky piece of shit ever, the fact that this exists is inherently a sin, DO NOT LEARN FROM THIS
+        //this mod is the most hacky piece of shit ever, do NOT learn from this...
 
         //this mod allows you to move in 360 degrees by tricking the game into believing you're holding forwards no matter what direction you're actually holding
         //then it takes advantage of the fact that player movement is based around the camera viewing angle to tell the game that the camera viewing angle is the actual direction you're holding
         //then it runs the entire playerCalc_nml AGAIN because that process is horrendous and breaks regular camera functions, but also disables player transform modifications to prevent double speed
         //luckily playerCalc_nml seems to contain just enough to make this work but not so much that it breaks
 
-        //and all of that bullshit is because the move direction is natively hardcoded to 8 directions for some reason... so I just use one!
+        //and all of that bullshit is because the move direction is natively hardcoded to 8 directions for some reason... so I just use one
 
-
+        //well.. I say this works, but it doesnt. it breaks event triggers. Probably something to do with collisions
+        
         //main camera patch
         [HarmonyPatch(typeof(fldCamera), "fldCamMain")]
         public static class camerapatch
